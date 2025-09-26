@@ -60,6 +60,6 @@ Distributed under the MIT License. See `LICENSE` file for more information.
 
 ## Contact
 
-Your Name - your.email@example.com
+email - papkovice@gmail.com
 
-Project Link: [https://github.com/your-username/visual-database-designer](https://github.com/your-username/visual-database-designer)
+Project Link: [https://github.com/Uluqq/visual-database-designer](https://github.com/Uluqq/visual-database-designer)
