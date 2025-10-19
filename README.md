@@ -48,9 +48,7 @@ The application is designed to be a powerful aid for students, developers, and d
     pip install -r requirements.txt
     ```
 4.  Run the application:
-    ```sh
-    python main.py
-    ```
+ 
 
 ---
 
