@@ -57,7 +57,7 @@ The application is designed to be a powerful aid for students, developers, and d
 Distributed under the MIT License. See `LICENSE` file for more information.
 
 ## Contact
-
+I'm open to any help and advice.
 email - papkovice@gmail.com
 
 Project Link: [https://github.com/Uluqq/visual-database-designer](https://github.com/Uluqq/visual-database-designer)
