@@ -1,3 +1,4 @@
+
 # views/main_window.py
 
 from PySide6.QtWidgets import (
@@ -10,17 +11,20 @@ from PySide6.QtCore import Qt
 from views.diagram_view import DiagramView
 from views.connection_dialog import ConnectionDialog
 from utils.schema_inspector import SchemaInspector
-# --- ИЗМЕНЕНИЕ ---
-# Импортируем наш "фальшивый" класс User, чтобы было понятно, с чем мы работаем
 from controllers.user_controller import User
+# --- ИЗМЕНЕНИЕ ---
+# Импортируем "фальшивый" класс Project
+from controllers.project_controller import Project
 
 
 class MainWindow(QMainWindow):
-    # Изменяем конструктор, чтобы он принимал пользователя
-    def __init__(self, user: User):
+    # --- ИЗМЕНЕНИЕ ---
+    # Конструктор теперь принимает и пользователя, и проект
+    def __init__(self, user: User, project: Project):
         super().__init__()
-        self.setWindowTitle("Visual Database Designer")
-        self.current_user = user # Сохраняем пользователя
+        self.setWindowTitle(f"Visual Database Designer - [{project.project_name}]")
+        self.current_user = user
+        self.current_project = project
 
         self.connection_params = {}
 
@@ -57,9 +61,10 @@ class MainWindow(QMainWindow):
         self.showMaximized()
 
     def update_status_bar(self):
-        """Обновляет строку состояния, показывая имя пользователя."""
-        if self.current_user:
-            self.statusBar().showMessage(f"Пользователь: {self.current_user.username}")
+        """Обновляет строку состояния, показывая имя пользователя и проект."""
+        if self.current_user and self.current_project:
+            status_text = f"Пользователь: {self.current_user.username}  |  Проект: {self.current_project.project_name}"
+            self.statusBar().showMessage(status_text)
 
     def init_db_list_panel(self):
         """Инициализирует сворачиваемую панель для списка баз данных."""
