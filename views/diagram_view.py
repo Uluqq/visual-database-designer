@@ -3,12 +3,14 @@
 from PySide6.QtWidgets import (
     QGraphicsView, QGraphicsScene, QGraphicsRectItem,
     QGraphicsTextItem, QMenu, QGraphicsPathItem,
-    QGraphicsEllipseItem, QMessageBox, QInputDialog
+    QGraphicsEllipseItem, QMessageBox, QInputDialog, QGraphicsItem
 )
 from PySide6.QtCore import Qt, QRectF, QPointF
 from PySide6.QtGui import QBrush, QColor, QPen, QPainter, QPainterPath
 from typing import Dict, Any, List
 
+
+# views/diagram_view.py -> class PortItem
 
 class PortItem(QGraphicsEllipseItem):
     def __init__(self, parent_column, side='left'):
@@ -17,6 +19,10 @@ class PortItem(QGraphicsEllipseItem):
         self.side = side
         self.default_brush = QBrush(QColor(100, 180, 255));
         self.hover_brush = QBrush(QColor(120, 200, 255))
+
+        # --- НОВЫЙ КОД ---
+        self.highlight_brush = QBrush(QColor(0, 180, 255))  # Ярко-синий
+
         self.setBrush(self.default_brush);
         self.setPen(QPen(Qt.NoPen));
         self.setZValue(10)
@@ -33,32 +39,60 @@ class PortItem(QGraphicsEllipseItem):
             self.setPos(r.right(), y_center)
 
     def hoverEnterEvent(self, event):
-        self.setBrush(self.hover_brush); self.setRect(-5, -5, 10, 10); super().hoverEnterEvent(event)
+        self.setBrush(self.hover_brush);
+        self.setRect(-5, -5, 10, 10);
+        super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event):
-        self.setBrush(self.default_brush); self.setRect(-4, -4, 8, 8); super().hoverLeaveEvent(event)
+        self.setBrush(self.default_brush);
+        self.setRect(-4, -4, 8, 8);
+        super().hoverLeaveEvent(event)
 
+    # --- НОВЫЙ МЕТОД ---
+    def set_highlighted(self, highlighted: bool):
+        if highlighted:
+            self.setBrush(self.highlight_brush)
+            self.setRect(-6, -6, 12, 12)  # Делаем порт чуть больше
+        else:
+            self.setBrush(self.default_brush)
+            self.setRect(-4, -4, 8, 8)
 
 class ColumnItem(QGraphicsRectItem):
     def __init__(self, name, parent_table, column_id=None, column_info=None, width=300, height=28):
         super().__init__(QRectF(6, 0, width - 12, height), parent_table)
         self.parent_table = parent_table;
         self.column_id = column_id
-        self.setBrush(QBrush(QColor(250, 250, 250)));
-        self.setPen(QPen(Qt.black, 1.0));
+
+        # --- НОВЫЙ КОД: Запоминаем стили по умолчанию ---
+        self.default_brush = QBrush(QColor(250, 250, 250))
+        self.default_pen = QPen(Qt.black, 1.0)
+
+        self.setBrush(self.default_brush);
+        self.setPen(self.default_pen);
         self.setZValue(1)
+
         attr_name = name
         attr_type = "varchar"
         if column_info and 'type' in column_info: attr_type = column_info['type']
+
         self.name_item = QGraphicsTextItem(attr_name, self);
         self.name_item.setDefaultTextColor(Qt.black);
         self.name_item.setPos(10, 4)
         self.type_item = QGraphicsTextItem(attr_type, self);
         self.type_item.setDefaultTextColor(Qt.black);
         self.type_item.setPos(150, 4)
+
         self.left_port = PortItem(self, 'left');
         self.right_port = PortItem(self, 'right')
 
+    # --- НОВЫЙ МЕТОД ---
+    def set_highlighted(self, highlighted: bool):
+        if highlighted:
+            self.setBrush(QBrush(QColor(225, 245, 255)))  # Светло-голубой фон
+            self.setPen(QPen(QColor(0, 180, 255), 2.0))  # Ярко-синяя рамка
+        else:
+            self.setBrush(self.default_brush)
+            self.setPen(self.default_pen)
 
 class AddButton(QGraphicsEllipseItem):
     def __init__(self, parent_table, action: str):
@@ -184,15 +218,21 @@ class TableItem(QGraphicsRectItem):
 
 
 # views/diagram_view.py -> class ConnectionLine
-
 # views/diagram_view.py -> class ConnectionLine
 
 class ConnectionLine(QGraphicsPathItem):
     def __init__(self, start_port, end_port, relationship_id=None):
         super().__init__()
         self.start_port, self.end_port, self.relationship_id = start_port, end_port, relationship_id
-        self.setPen(QPen(QColor(80, 80, 80), 2))
+
+        self.default_pen = QPen(QColor(80, 80, 80), 2)
+        self.highlight_pen = QPen(QColor(0, 180, 255), 3.5)
+        self.setPen(self.default_pen)
+
+        # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
         self.setFlag(QGraphicsPathItem.ItemIsSelectable, True)
+        # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+
         self.setZValue(-1)
         for port in [start_port, end_port]:
             if not hasattr(port, 'connections'):
@@ -201,38 +241,37 @@ class ConnectionLine(QGraphicsPathItem):
         self.update_position()
 
     def update_position(self):
-        """
-        ИСПОЛЬЗУЕТ НОВЫЙ АЛГОРИТМ: S-образные кривые Безье с "полочками".
-        """
         path = QPainterPath()
         start_p = self.start_port.scenePos()
         end_p = self.end_port.scenePos()
         path.moveTo(start_p)
-
-        # Рассчитываем динамическую длину "полочек"
         dx = end_p.x() - start_p.x()
-        dy = end_p.y() - start_p.y()
-
-        # Длина горизонтальной "полочки" - половина расстояния по X, но не более 100px
         offset = min(abs(dx) * 0.5, 100.0)
-        # Если таблицы почти друг под другом, делаем фиксированную полочку, чтобы избежать "схлопывания"
         if abs(dx) < 50:
             offset = 50
-
-        # Определяем направление полочек в зависимости от стороны порта
         start_offset = offset if self.start_port.side == 'right' else -offset
         end_offset = -offset if self.end_port.side == 'left' else offset
-
-        # Создаем контрольные точки для кривой Безье
-        # Они лежат на горизонтальных линиях, выходящих из портов
         control1 = QPointF(start_p.x() + start_offset, start_p.y())
         control2 = QPointF(end_p.x() + end_offset, end_p.y())
-
-        # Рисуем плавную S-образную кривую
         path.cubicTo(control1, control2, end_p)
-
         self.setPath(path)
-# views/diagram_view.py -> class DiagramView
+
+    def paint(self, painter, option, widget=None):
+        original_pen = self.pen()
+        painter.setPen(original_pen)
+        painter.drawPath(self.path())
+
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.ItemSelectedChange:
+            self.set_highlighted(value)
+        return super().itemChange(change, value)
+
+    def set_highlighted(self, highlighted: bool):
+        self.setPen(self.highlight_pen if highlighted else self.default_pen)
+        self.start_port.set_highlighted(highlighted)
+        self.start_port.column.set_highlighted(highlighted)
+        self.end_port.set_highlighted(highlighted)
+        self.end_port.column.set_highlighted(highlighted)
 
 class DiagramView(QGraphicsView):
     def __init__(self):
