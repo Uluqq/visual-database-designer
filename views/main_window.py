@@ -1,4 +1,3 @@
-
 # views/main_window.py
 
 from PySide6.QtWidgets import (
@@ -11,90 +10,93 @@ from PySide6.QtCore import Qt
 from views.diagram_view import DiagramView
 from views.connection_dialog import ConnectionDialog
 from utils.schema_inspector import SchemaInspector
-from controllers.user_controller import User
-# --- ИЗМЕНЕНИЕ ---
-# Импортируем "фальшивый" класс Project
-from controllers.project_controller import Project
+from models.user import User
+from models.project import Project
+
+# --- НОВЫЙ ИМПОРТ ---
+from controllers.diagram_controller import DiagramController
 
 
 class MainWindow(QMainWindow):
-    # --- ИЗМЕНЕНИЕ ---
-    # Конструктор теперь принимает и пользователя, и проект
     def __init__(self, user: User, project: Project):
         super().__init__()
         self.setWindowTitle(f"Visual Database Designer - [{project.project_name}]")
         self.current_user = user
         self.current_project = project
 
-        self.connection_params = {}
+        self.diagram_controller = DiagramController()
 
-        # --- Настройка Центрального Виджета ---
+        self.connection_params = {}
         self.main_container = QWidget()
         self.main_layout = QVBoxLayout(self.main_container)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # 1. Сворачиваемая панель списка БД
         self.init_db_list_panel()
 
-        # 2. Основной вид диаграммы
         self.diagram_view = DiagramView()
+        self.diagram_view.set_controller(self.diagram_controller)
         self.main_layout.addWidget(self.diagram_view)
-
         self.setCentralWidget(self.main_container)
 
-        # ✅ Панель инструментов
         toolbar = QToolBar("Главная панель")
         self.addToolBar(toolbar)
 
-        add_table_action = QAction(QIcon(), "Добавить таблицу", self)
-        add_table_action.triggered.connect(lambda: self.diagram_view.add_table_at(None))
-        toolbar.addAction(add_table_action)
+        # --- ИСПРАВЛЕНИЕ: ЭТИ ТРИ СТРОКИ УДАЛЕНЫ ---
+        # add_table_action = QAction(QIcon(), "Добавить таблицу", self)
+        # add_table_action.triggered.connect(lambda: self.diagram_view.add_table_at(None))
+        # toolbar.addAction(add_table_action)
+        # ----------------------------------------------
 
         connect_action = QAction(QIcon(), "Подключиться к БД", self)
         connect_action.triggered.connect(self.show_connection_dialog)
         toolbar.addAction(connect_action)
 
-        # Добавляем StatusBar для отображения информации
         self.setStatusBar(QStatusBar(self))
         self.update_status_bar()
 
         self.showMaximized()
 
+        self.load_project_data()
+
+    def load_project_data(self):
+        """Загружает данные диаграммы для текущего проекта."""
+        if not self.current_project:
+            return
+
+        diagram = self.diagram_controller.get_or_create_diagram_for_project(self.current_project.project_id)
+        diagram_objects = self.diagram_controller.get_diagram_details(diagram.diagram_id)
+
+        self.diagram_view.load_diagram_data(diagram, diagram_objects)
+        print(
+            f"Загружена диаграмма '{diagram.diagram_name}' для проекта '{self.current_project.project_name}'. Найдено объектов: {len(diagram_objects)}")
+
     def update_status_bar(self):
-        """Обновляет строку состояния, показывая имя пользователя и проект."""
         if self.current_user and self.current_project:
             status_text = f"Пользователь: {self.current_user.username}  |  Проект: {self.current_project.project_name}"
             self.statusBar().showMessage(status_text)
 
     def init_db_list_panel(self):
-        """Инициализирует сворачиваемую панель для списка баз данных."""
         self.db_panel_container = QWidget()
         self.db_panel_layout = QVBoxLayout(self.db_panel_container)
         self.db_panel_layout.setContentsMargins(0, 0, 0, 0)
         self.db_panel_container.setVisible(False)
-
         header_widget = QWidget()
         header_layout = QHBoxLayout(header_widget)
         header_layout.setContentsMargins(0, 0, 0, 0)
-
         self.db_list_label = QLabel("Доступные базы данных (Двойной клик для загрузки схемы):")
         self.toggle_button = QToolButton()
         self.toggle_button.setText("Скрыть")
         self.toggle_button.setCheckable(True)
         self.toggle_button.setChecked(False)
         self.toggle_button.clicked.connect(self.toggle_db_list_visibility)
-
         header_layout.addWidget(self.db_list_label)
         header_layout.addStretch(1)
         header_layout.addWidget(self.toggle_button)
-
         self.db_list_widget = QListWidget()
         self.db_list_widget.setMaximumHeight(200)
         self.db_list_widget.itemDoubleClicked.connect(self.start_reverse_engineering)
-
         self.db_panel_layout.addWidget(header_widget)
         self.db_panel_layout.addWidget(self.db_list_widget)
-
         self.main_layout.addWidget(self.db_panel_container)
 
     def toggle_db_list_visibility(self, checked):

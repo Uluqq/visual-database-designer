@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
     QGraphicsView, QGraphicsScene, QGraphicsRectItem,
     QGraphicsTextItem, QMenu, QGraphicsPathItem,
-    QGraphicsEllipseItem, QGraphicsTextItem
+    QGraphicsEllipseItem, QGraphicsTextItem, QMessageBox
 )
 from PySide6.QtCore import Qt, QRectF, QPointF, QTimer, QEasingCurve
 from PySide6.QtGui import QBrush, QColor, QPen, QPainterPath, QPainter
@@ -171,11 +171,16 @@ class AddButton(QGraphicsEllipseItem):
 # TableItem (обновлённый)
 # -------------------------
 class TableItem(QGraphicsRectItem):
-    def __init__(self, name, x, y, width=300, height=60):  # ИСПРАВЛЕНИЕ 1: Увеличена ширина по умолчанию с 200 до 300
+    def __init__(self, name, x, y, diagram_object_id=None, table_id=None, controller=None, width=300, height=60):
         super().__init__(QRectF(0, 0, width, height))
-        self.connections = []  # список соединений, привязанных к таблице (будет заполняться при создании ConnectionLine)
+        # --- НОВЫЕ СВОЙСТВА ДЛЯ СВЯЗИ С БД ---
+        self.diagram_object_id = diagram_object_id
+        self.table_id = table_id
+        self.controller = controller
+        # ---
+        self.connections = []
         self.columns = []
-        self.column_map = {}  # Добавим карту для быстрого поиска колонок по имени
+        self.column_map = {}
         self.width = width
         self.row_height = 28
         self.setBrush(QBrush(QColor(200, 220, 255)))
@@ -191,12 +196,19 @@ class TableItem(QGraphicsRectItem):
         self.text = QGraphicsTextItem(name, self)
         self.text.setDefaultTextColor(QColor(30, 30, 30))
         self.text.setPos(8, 4)
-        self.table_name = name  # Сохраняем имя таблицы
+        self.table_name = name
 
-        # кнопки + и -
         self.add_button = AddButton(self, 'right')
         self.remove_button = AddButton(self, 'left')
         self.update_button_positions()
+
+    def mouseReleaseEvent(self, event):
+        """Когда пользователь отпускает мышь после перемещения, сохраняем новую позицию."""
+        super().mouseReleaseEvent(event)
+        if self.controller and self.diagram_object_id:
+            new_pos = self.pos()
+            print(f"Сохранение новой позиции для объекта {self.diagram_object_id}: ({new_pos.x()}, {new_pos.y()})")
+            self.controller.update_table_position(self.diagram_object_id, int(new_pos.x()), int(new_pos.y()))
 
     def hoverEnterEvent(self, event):
         self.add_button.setVisible(True)
@@ -223,7 +235,6 @@ class TableItem(QGraphicsRectItem):
     def add_column(self, name=None, column_info=None):
         if name is None:
             name = f"col_{len(self.columns) + 1}"
-
         y = 26 + len(self.columns) * self.row_height
         col = ColumnItem(name, y, self, self.width, self.row_height, column_info=column_info)
         self.columns.append(col)
@@ -486,7 +497,7 @@ class ConnectionLine(QGraphicsPathItem):
 
 
 # -------------------------
-# DiagramView (обновлённый: добавление load_schema)
+# DiagramView (СУЩЕСТВЕННЫЕ ИЗМЕНЕНИЯ)
 # -------------------------
 class DiagramView(QGraphicsView):
     def __init__(self):
@@ -496,17 +507,134 @@ class DiagramView(QGraphicsView):
         self.setRenderHints(self.renderHints() | QPainter.Antialiasing)
         self.setBackgroundBrush(QBrush(QColor(245, 245, 245)))
         self.setSceneRect(0, 0, 4000, 3000)
-        self.table_counter = 1
-        self.connect_mode = True  # у тебя раньше было True — оставил как до этого
-        self.first_port = None
         self.setDragMode(QGraphicsView.RubberBandDrag)
-        self.setInteractive(True)
-        self.setFocusPolicy(Qt.ClickFocus)
 
-        # Карта для быстрого доступа к объектам TableItem по имени таблицы
+        # --- НОВЫЕ СВОЙСТВА ДЛЯ РАБОТЫ С ДАННЫМИ ---
+        self.controller = None
+        self.current_diagram = None
         self.table_items: Dict[str, TableItem] = {}
+        self.table_counter = 1  # Для именования новых таблиц
+
+    def set_controller(self, controller):
+        """
+        Устанавливает контроллер для этого вида. Вызывается из MainWindow.
+        """
+        self.controller = controller
+
+    def load_diagram_data(self, diagram, diagram_objects):
+        """
+        Очищает сцену и загружает на нее данные из БД, полученные от контроллера.
+        """
+        self.clear_diagram()
+        self.current_diagram = diagram
+
+        if not diagram_objects:
+            return
+
+        max_id = 0
+        for d_obj in diagram_objects:
+            if "New_Table_" in d_obj.table.table_name:
+                try:
+                    num = int(d_obj.table.table_name.split('_')[-1])
+                    if num > max_id:
+                        max_id = num
+                except (ValueError, IndexError):
+                    continue
+        self.table_counter = max_id + 1
+
+        for d_obj in diagram_objects:
+            table = d_obj.table
+            table_item = TableItem(
+                name=table.table_name,
+                x=d_obj.pos_x,
+                y=d_obj.pos_y,
+                diagram_object_id=d_obj.object_id,
+                table_id=table.table_id,
+                controller=self.controller
+            )
+            self.scene.addItem(table_item)
+            self.table_items[table.table_name] = table_item
+
+    def clear_diagram(self):
+        """Очищает текущую диаграмму, сбрасывая все элементы и счетчики."""
+        self.scene.clear()
+        self.table_items = {}
+        self.table_counter = 1
+
+    def contextMenuEvent(self, event):
+        """
+        Создает и показывает контекстное меню по правому клику мыши.
+        """
+        menu = QMenu(self)
+        add_action = menu.addAction("Добавить таблицу")
+        delete_action = menu.addAction("Удалить выбранное")
+        selected_items = self.scene.selectedItems()
+        delete_action.setEnabled(any(isinstance(it, TableItem) for it in selected_items))
+        selected_action = menu.exec(event.globalPos())
+        if selected_action == add_action:
+            pos = self.mapToScene(event.pos())
+            self.add_new_table(pos.x(), pos.y())
+        elif selected_action == delete_action:
+            self.delete_selected_tables()
+
+    def add_new_table(self, x, y):
+        """
+        Обрабатывает запрос на создание новой таблицы.
+        """
+        if not self.controller or not self.current_diagram:
+            print("Ошибка: Контроллер или текущая диаграмма не установлены.")
+            return
+
+        table_name = f"New_Table_{self.table_counter}"
+
+        # --- ИЗМЕНЕНИЕ: Передаем ID проекта в контроллер ---
+        # Мы берем его из объекта текущей диаграммы
+        new_diagram_object = self.controller.add_new_table_to_diagram(
+            diagram_id=self.current_diagram.diagram_id,
+            project_id=self.current_diagram.project_id,
+            table_name=table_name,
+            x=int(x),
+            y=int(y)
+        )
+
+        if new_diagram_object:
+            self.table_counter += 1
+            table = new_diagram_object.table
+            table_item = TableItem(
+                name=table.table_name,
+                x=new_diagram_object.pos_x,
+                y=new_diagram_object.pos_y,
+                diagram_object_id=new_diagram_object.object_id,
+                table_id=table.table_id,
+                controller=self.controller
+            )
+            self.scene.addItem(table_item)
+            self.table_items[table.table_name] = table_item
+        else:
+            QMessageBox.critical(self, "Ошибка", "Не удалось создать таблицу в базе данных.")
+
+    def delete_selected_tables(self):
+        """
+        Удаляет все выбранные таблицы.
+        """
+        if not self.controller:
+            return
+        items_to_delete = [item for item in self.scene.selectedItems() if isinstance(item, TableItem)]
+        if not items_to_delete:
+            return
+        reply = QMessageBox.question(self, 'Подтверждение удаления',
+                                     f'Вы уверены, что хотите удалить {len(items_to_delete)} таблицу(ы)? Это действие необратимо.',
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.No:
+            return
+        for item in items_to_delete:
+            self.controller.delete_table_from_diagram(item.diagram_object_id)
+            self.scene.removeItem(item)
+            if item.table_name in self.table_items:
+                del self.table_items[item.table_name]
 
     def drawBackground(self, painter, rect):
+        """Отрисовывает сетку на фоне."""
         super().drawBackground(painter, rect)
         painter.setPen(QColor(220, 220, 220))
         step = 25
@@ -517,71 +645,18 @@ class DiagramView(QGraphicsView):
         for y in range(top, int(rect.bottom()), step):
             painter.drawLine(rect.left(), y, rect.right(), y)
 
-    def mousePressEvent(self, event):
-        # если клик по пустому месту — снять все выделения
-        if event.button() == Qt.LeftButton and not self.itemAt(event.pos()):
-            for it in list(self.scene.selectedItems()):
-                it.setSelected(False)
-
-        # режим соединений через порты
-        if self.connect_mode and event.button() == Qt.LeftButton:
-            item = self.itemAt(event.pos())
-            # кликаем по порту (PortItem)
-            if isinstance(item, PortItem):
-                if not self.first_port:
-                    self.first_port = item
-                else:
-                    # создаём линию между двумя портами
-                    line = ConnectionLine(self.first_port, self.first_port.side, item, item.side)
-                    self.scene.addItem(line)
-                    self.first_port = None
-                    return
-        super().mousePressEvent(event)
-
-    def contextMenuEvent(self, event):
-        item = self.itemAt(event.pos())
-        if isinstance(item, TableItem):
-            return
-        menu = QMenu()
-        add_action = menu.addAction("Добавить таблицу")
-        delete_action = menu.addAction("Удалить выбранное")
-        selected_action = menu.exec(event.globalPos())
-        if selected_action == add_action:
-            self.add_table_at(event)
-        elif selected_action == delete_action:
-            for it in list(self.scene.selectedItems()):
-                self.scene.removeItem(it)
-
-    def add_table_at(self, event):
-        if event is None:
-            # Если вызывается из тулбара, размещаем в центре видимой области
-            center = self.mapToScene(self.viewport().rect().center())
-            pos = center
-        else:
-            pos = self.mapToScene(event.pos())
-
-        table = TableItem(f"Table_{self.table_counter}", pos.x(), pos.y())
-        self.scene.addItem(table)
-        self.table_items[table.table_name] = table
-        self.table_counter += 1
-        table.add_column("col_1")
-        table.add_column("col_2")
-        return table  # Возвращаем созданную таблицу
-
     def wheelEvent(self, event):
+        """Обрабатывает масштабирование с помощью колесика мыши."""
         delta = event.angleDelta().y()
-        modifiers = event.modifiers()
-        if modifiers & Qt.ControlModifier:
+        if event.modifiers() & Qt.ControlModifier:
             old_pos = self.mapToScene(event.position().toPoint())
-            zoom = 1.25 if delta > 0 else 0.8
-            self.scale(zoom, zoom)
+            zoom_factor = 1.15 if delta > 0 else 1 / 1.15
+            self.scale(zoom_factor, zoom_factor)
             new_pos = self.mapToScene(event.position().toPoint())
             delta_scene = new_pos - old_pos
             self.translate(delta_scene.x(), delta_scene.y())
-        elif modifiers & Qt.ShiftModifier:
-            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta / 2)
         else:
-            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta / 2)
+            super().wheelEvent(event)
 
     def clear_diagram(self):
         """Очищает текущую диаграмму."""
