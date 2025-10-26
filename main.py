@@ -4,10 +4,16 @@ from PySide6.QtWidgets import QApplication, QDialog
 from views.main_window import MainWindow
 from views.auth_dialog import AuthDialog
 from views.project_selection_dialog import ProjectSelectionDialog
+from models.base import init_db  # <-- Импортируем нашу функцию
 import sys
 
 
 def main():
+    # --- ИЗМЕНЕНИЕ: Создаем таблицы в БД при первом запуске ---
+    print("Инициализация базы данных...")
+    init_db()
+    print("База данных готова.")
+
     app = QApplication(sys.argv)
 
     current_user = None
@@ -23,7 +29,7 @@ def main():
     auth_dialog.authenticated.connect(on_authenticated)
 
     if auth_dialog.exec() != QDialog.Accepted or not current_user:
-        sys.exit(0)  # Выход, если пользователь закрыл окно входа
+        sys.exit(0)
 
     # --- Шаг 2: Выбор проекта ---
     project_dialog = ProjectSelectionDialog(user=current_user)
@@ -35,10 +41,9 @@ def main():
     project_dialog.project_selected.connect(on_project_selected)
 
     if project_dialog.exec() != QDialog.Accepted or not selected_project:
-        sys.exit(0)  # Выход, если пользователь закрыл окно выбора проекта
+        sys.exit(0)
 
     # --- Шаг 3: Запуск главного окна ---
-    # Передаем и пользователя, и выбранный проект
     main_window = MainWindow(user=current_user, project=selected_project)
     main_window.show()
 
