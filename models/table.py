@@ -1,4 +1,5 @@
 # models/table.py
+
 from sqlalchemy import (
     Column, Integer, String, Text, Boolean, ForeignKey, PrimaryKeyConstraint
 )
@@ -16,14 +17,10 @@ class Table(Base):
     schema = relationship("Schema", back_populates="tables")
     columns = relationship("TableColumn", back_populates="table", cascade="all, delete-orphan")
     indexes = relationship("DbIndex", back_populates="table", cascade="all, delete-orphan")
-
-    # --- ИЗМЕНЕНИЯ ЗДЕСЬ ---
-    # Заменяем синтаксис "[ClassName.column]" на "ClassName.column"
-    # Это помогает SQLAlchemy лучше разрешать циклические зависимости.
     start_relationships = relationship("Relationship", foreign_keys="Relationship.start_table_id",
-                                       back_populates="start_table")
+                                       back_populates="start_table", cascade="all, delete-orphan")
     end_relationships = relationship("Relationship", foreign_keys="Relationship.end_table_id",
-                                     back_populates="end_table")
+                                     back_populates="end_table", cascade="all, delete-orphan")
 
 
 class TableColumn(Base):
@@ -31,19 +28,24 @@ class TableColumn(Base):
     column_id = Column(Integer, primary_key=True)
     column_name = Column(String(100), nullable=False)
     data_type = Column(String(50), nullable=False)
-    col_num = Column(Integer)
+
+    # --- ДОБАВЛЕННЫЕ ПОЛЯ ---
+    is_primary_key = Column(Boolean, default=False, nullable=False)
+    is_unique = Column(Boolean, default=False, nullable=False)
     is_nullable = Column(Boolean, default=True, nullable=False)
     default_value = Column(String(255), nullable=True)
+    # ---
+
+    col_num = Column(Integer)
     table_id = Column(Integer, ForeignKey('tables.table_id'), nullable=False)
     table = relationship("Table", back_populates="columns")
 
 
+# --- Остальные классы остаются для совместимости, но мы их пока не используем ---
 class DbIndex(Base):
     __tablename__ = 'indexes'
     index_id = Column(Integer, primary_key=True)
     index_name = Column(String(100), nullable=False)
-    is_primarykey = Column(Boolean, default=False)
-    is_unique = Column(Boolean, default=False)
     table_id = Column(Integer, ForeignKey('tables.table_id'), nullable=False)
     table = relationship("Table", back_populates="indexes")
     index_columns = relationship("IndexColumn", back_populates="index", cascade="all, delete-orphan")
@@ -51,8 +53,9 @@ class DbIndex(Base):
 
 class IndexColumn(Base):
     __tablename__ = 'indexColumns'
-    index_id = Column(Integer, ForeignKey('indexes.index_id'), primary_key=True)
-    column_id = Column(Integer, ForeignKey('columns.column_id'), primary_key=True)
+    __table_args__ = (PrimaryKeyConstraint('index_id', 'column_id'),)
+    index_id = Column(Integer, ForeignKey('indexes.index_id'))
+    column_id = Column(Integer, ForeignKey('columns.column_id'))
     order = Column(Integer)
     index = relationship("DbIndex", back_populates="index_columns")
     column = relationship("TableColumn")

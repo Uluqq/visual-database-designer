@@ -9,7 +9,7 @@ import sys
 
 
 def main():
-    # --- ИЗМЕНЕНИЕ: Создаем таблицы в БД при первом запуске ---
+
     print("Инициализация базы данных...")
     init_db()
     print("База данных готова.")
@@ -19,7 +19,7 @@ def main():
     current_user = None
     selected_project = None
 
-    # --- Шаг 1: Аутентификация ---
+
     auth_dialog = AuthDialog()
 
     def on_authenticated(user):
@@ -31,7 +31,7 @@ def main():
     if auth_dialog.exec() != QDialog.Accepted or not current_user:
         sys.exit(0)
 
-    # --- Шаг 2: Выбор проекта ---
+
     project_dialog = ProjectSelectionDialog(user=current_user)
 
     def on_project_selected(project):
