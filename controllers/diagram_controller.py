@@ -42,7 +42,6 @@ class DiagramController:
             session.commit();
             session.refresh(new_table)
 
-            # При создании таблицы сразу делаем 'id' первичным и не-null ключом
             default_col = TableColumn(column_name="id", data_type="integer", table_id=new_table.table_id,
                                       is_primary_key=True, is_nullable=False)
             session.add(default_col);
@@ -82,9 +81,7 @@ class DiagramController:
         finally:
             session.close()
 
-    # --- НОВЫЕ МЕТОДЫ ДЛЯ РАБОТЫ С КОЛОНКАМИ ---
     def get_columns_for_table(self, table_id: int) -> list[TableColumn]:
-        """Возвращает все колонки для указанной таблицы."""
         session = SessionLocal()
         try:
             return session.query(TableColumn).filter_by(table_id=table_id).order_by(TableColumn.column_id).all()
@@ -92,18 +89,15 @@ class DiagramController:
             session.close()
 
     def sync_columns_for_table(self, table_id: int, columns_data: list[dict]):
-        """Синхронизирует состояние колонок в БД с данными из редактора."""
         session = SessionLocal()
         try:
             existing_columns = {c.column_id: c for c in session.query(TableColumn).filter_by(table_id=table_id)}
             data_ids = {d['id'] for d in columns_data if d.get('id')}
 
-            # 1. Удаляем те, что были убраны в редакторе
             for col_id, col_obj in existing_columns.items():
                 if col_id not in data_ids:
                     session.delete(col_obj)
 
-            # 2. Обновляем существующие и добавляем новые
             for data in columns_data:
                 col_id = data.get('id')
                 if col_id in existing_columns:
@@ -111,10 +105,12 @@ class DiagramController:
                     col.column_name = data['name']
                     col.data_type = data['type']
                     col.is_primary_key = data['pk']
-                    col.is_nullable = not data['nn']  # NN = Not Null, is_nullable = Nullable
+                    col.is_nullable = not data['nn']
+                    col.is_unique = data.get('uq', False)  # Обрабатываем ключ 'uq'
                 else:
                     col = TableColumn(table_id=table_id, column_name=data['name'], data_type=data['type'],
-                                      is_primary_key=data['pk'], is_nullable=not data['nn'])
+                                      is_primary_key=data['pk'], is_nullable=not data['nn'],
+                                      is_unique=data.get('uq', False)) # Обрабатываем ключ 'uq'
                     session.add(col)
             session.commit()
         except Exception as e:
@@ -123,7 +119,20 @@ class DiagramController:
         finally:
             session.close()
 
-    # ... (методы для связей остаются без изменений)
+    def update_column_data_type(self, column_id: int, new_data_type: str):
+        """Обновляет только тип данных для одной колонки."""
+        session = SessionLocal()
+        try:
+            column = session.get(TableColumn, column_id)
+            if column:
+                column.data_type = new_data_type
+                session.commit()
+        except Exception as e:
+            session.rollback()
+            print(f"Ошибка при обновлении типа данных колонки: {e}")
+        finally:
+            session.close()
+
     def get_relationships_for_project(self, project_id: int) -> list[Relationship]:
         session = SessionLocal()
         try:
@@ -135,7 +144,7 @@ class DiagramController:
     def add_relationship(self, project_id: int, start_col_id: int, end_col_id: int) -> Relationship:
         session = SessionLocal()
         try:
-            start_col = session.get(TableColumn, start_col_id);
+            start_col = session.get(TableColumn, start_col_id)
             end_col = session.get(TableColumn, end_col_id)
             if not start_col or not end_col: return None
             constraint_name = f"fk_{start_col.table.table_name}_{end_col.table.table_name}"
@@ -165,3 +174,11 @@ class DiagramController:
         finally:
             session.close()
 
+    def is_column_foreign_key(self, column_id: int) -> bool:
+
+        session = SessionLocal()
+        try:
+            count = session.query(RelationshipColumn).filter_by(end_column_id=column_id).count()
+            return count > 0
+        finally:
+            session.close()

@@ -94,7 +94,7 @@ class TableEditorDialog(QDialog):
         self._center_widget_in_cell(row, 2, QCheckBox())
         self._center_widget_in_cell(row, 3, QCheckBox())
         uq_check = QCheckBox();
-        uq_check.setEnabled(False)
+        # uq_check.setEnabled(False)
         self._center_widget_in_cell(row, 4, uq_check)
 
     def _remove_row(self):
@@ -114,6 +114,7 @@ class TableEditorDialog(QDialog):
                 "type": self.table_widget.cellWidget(row, 1).currentText(),
                 "pk": self.table_widget.cellWidget(row, 2).layout().itemAt(0).widget().isChecked(),
                 "nn": self.table_widget.cellWidget(row, 3).layout().itemAt(0).widget().isChecked(),
+                "uq": self.table_widget.cellWidget(row, 4).layout().itemAt(0).widget().isChecked(),
             })
         self.controller.sync_columns_for_table(self.table_id, columns_data)
         self.accept()

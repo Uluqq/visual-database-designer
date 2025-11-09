@@ -6,28 +6,28 @@ from PySide6.QtWidgets import (
     QGraphicsEllipseItem, QMessageBox, QInputDialog, QGraphicsItem, QDialog, QMainWindow
 )
 from PySide6.QtCore import Qt, QRectF, QPointF
-from PySide6.QtGui import QBrush, QColor, QPen, QPainter, QPainterPath
+from PySide6.QtGui import QBrush, QColor, QPen, QPainter, QPainterPath, QFontMetrics
 from .table_editor_dialog import TableEditorDialog
+from typing import Dict
 
 
-# ... (Классы PortItem, ColumnItem, AddButton, ConnectionLine остаются без изменений, но привожу их для полноты)
 class PortItem(QGraphicsEllipseItem):
     def __init__(self, parent_column, side='left'):
         super().__init__(-4, -4, 8, 8, parent_column)
-        self.column = parent_column;
+        self.column = parent_column
         self.side = side
-        self.default_brush = QBrush(QColor(100, 180, 255));
-        self.hover_brush = QBrush(QColor(120, 200, 255));
+        self.default_brush = QBrush(QColor(100, 180, 255))
+        self.hover_brush = QBrush(QColor(120, 200, 255))
         self.highlight_brush = QBrush(QColor(0, 180, 255))
-        self.setBrush(self.default_brush);
-        self.setPen(QPen(Qt.NoPen));
+        self.setBrush(self.default_brush)
+        self.setPen(QPen(Qt.NoPen))
         self.setZValue(10)
-        self.setAcceptHoverEvents(True);
-        self.setVisible(False);
+        self.setAcceptHoverEvents(True)
+        self.setVisible(False)
         self.update_position()
 
     def update_position(self):
-        r = self.column.rect();
+        r = self.column.rect()
         y_center = r.top() + r.height() / 2
         if self.side == 'left':
             self.setPos(r.left(), y_center)
@@ -35,48 +35,90 @@ class PortItem(QGraphicsEllipseItem):
             self.setPos(r.right(), y_center)
 
     def hoverEnterEvent(self, event):
-        self.setBrush(self.hover_brush); self.setRect(-5, -5, 10, 10); super().hoverEnterEvent(event)
+        self.setBrush(self.hover_brush);
+        self.setRect(-5, -5, 10, 10);
+        super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event):
-        self.setBrush(self.default_brush); self.setRect(-4, -4, 8, 8); super().hoverLeaveEvent(event)
+        self.setBrush(self.default_brush);
+        self.setRect(-4, -4, 8, 8);
+        super().hoverLeaveEvent(event)
 
     def set_highlighted(self, highlighted: bool):
         if highlighted:
-            self.setBrush(self.highlight_brush); self.setRect(-6, -6, 12, 12)
+            self.setBrush(self.highlight_brush);
+            self.setRect(-6, -6, 12, 12)
         else:
-            self.setBrush(self.default_brush); self.setRect(-4, -4, 8, 8)
+            self.setBrush(self.default_brush);
+            self.setRect(-4, -4, 8, 8)
 
 
 class ColumnItem(QGraphicsRectItem):
+    # МАКСИМАЛЬНАЯ ШИРИНА ДЛЯ ИМЕНИ И ТИПА (ПОДБЕРИТЕ ЗНАЧЕНИЯ ПОД СЕБЯ)
+    MAX_NAME_WIDTH = 130
+    MAX_TYPE_WIDTH = 120
+
     def __init__(self, name, parent_table, column_id=None, column_info=None, width=300, height=28):
         super().__init__(QRectF(6, 0, width - 12, height), parent_table)
-        self.parent_table = parent_table;
+        self.parent_table = parent_table
         self.column_id = column_id
-        self.default_brush = QBrush(QColor(250, 250, 250));
+
+        # Сохраняем исходные данные для последующих обновлений
+        self.raw_name = name
+        self.data_type = column_info.get('type', 'varchar') if column_info else "varchar"
+        self.is_pk = column_info.get('pk', False) if column_info else False
+        self.is_fk = False  # Флаг для отображения иконки замка
+        self.is_nn = column_info.get('nn', True) if column_info else True
+
+        self.default_brush = QBrush(QColor(250, 250, 250))
         self.default_pen = QPen(Qt.black, 1.0)
-        self.setBrush(self.default_brush);
-        self.setPen(self.default_pen);
+        self.setBrush(self.default_brush)
+        self.setPen(self.default_pen)
         self.setZValue(1)
-        attr_name = name;
-        attr_type = "varchar"
-        if column_info:
-            attr_type = column_info.get('type', 'varchar')
-            if column_info.get('pk', False): attr_name = f"🔑 {attr_name}"
-            if not column_info.get('nn', True): attr_type += " [null]"
-        self.name_item = QGraphicsTextItem(attr_name, self);
-        self.name_item.setDefaultTextColor(Qt.black);
+
+        self.name_item = QGraphicsTextItem("", self)
+        self.name_item.setDefaultTextColor(Qt.black)
         self.name_item.setPos(10, 4)
-        self.type_item = QGraphicsTextItem(attr_type, self);
-        self.type_item.setDefaultTextColor(QColor(80, 80, 80));
+
+        self.type_item = QGraphicsTextItem("", self)
+        self.type_item.setDefaultTextColor(QColor(80, 80, 80))
         self.type_item.setPos(150, 4)
-        self.left_port = PortItem(self, 'left');
+
+        self.left_port = PortItem(self, 'left')
         self.right_port = PortItem(self, 'right')
+
+        self._update_and_elide_text()
+
+    def _update_and_elide_text(self):
+        """Обновляет и усекает текст для имени и типа колонки."""
+        prefix = ""
+        if self.is_pk: prefix += "🔑 "
+        if self.is_fk: prefix += "🔒 "
+        display_name = f"{prefix}{self.raw_name}"
+
+        suffix = "" if self.is_nn else " [null]"
+        display_type = f"{self.data_type}{suffix}"
+
+        font_metrics_name = QFontMetrics(self.name_item.font())
+        elided_name = font_metrics_name.elidedText(display_name, Qt.ElideRight, self.MAX_NAME_WIDTH)
+        self.name_item.setPlainText(elided_name)
+
+        font_metrics_type = QFontMetrics(self.type_item.font())
+        elided_type = font_metrics_type.elidedText(display_type, Qt.ElideRight, self.MAX_TYPE_WIDTH)
+        self.type_item.setPlainText(elided_type)
+
+    def update_data_type(self, new_type: str):
+        """Обновляет тип данных и перерисовывает текст."""
+        self.data_type = new_type
+        self._update_and_elide_text()
 
     def set_highlighted(self, highlighted: bool):
         if highlighted:
-            self.setBrush(QBrush(QColor(225, 245, 255))); self.setPen(QPen(QColor(0, 180, 255), 2.0))
+            self.setBrush(QBrush(QColor(225, 245, 255)));
+            self.setPen(QPen(QColor(0, 180, 255), 2.0))
         else:
-            self.setBrush(self.default_brush); self.setPen(self.default_pen)
+            self.setBrush(self.default_brush);
+            self.setPen(self.default_pen)
 
 
 class AddButton(QGraphicsEllipseItem): pass
@@ -86,30 +128,28 @@ class TableItem(QGraphicsRectItem):
     def __init__(self, name, x, y, diagram_object_id=None, table_id=None, controller=None, width=300, height=60):
         super().__init__(QRectF(0, 0, width, height))
         self.diagram_object_id, self.table_id, self.controller = diagram_object_id, table_id, controller
-        self.columns = [];
+        self.columns = []
         self.width, self.row_height = width, 28
-        self.setPos(x, y);
+        self.setPos(x, y)
         self.setFlags(
-            QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges);
+            QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges)
         self.setAcceptHoverEvents(True)
-        self.setBrush(QBrush(QColor(200, 220, 255)));
+        self.setBrush(QBrush(QColor(200, 220, 255)))
         self.setPen(QPen(QColor(80, 80, 120), 1.2))
-        self.text = QGraphicsTextItem(name, self);
-        self.text.setDefaultTextColor(QColor(30, 30, 30));
+        self.text = QGraphicsTextItem(name, self)
+        self.text.setDefaultTextColor(QColor(30, 30, 30))
         self.text.setPos(8, 4)
 
     def mouseDoubleClickEvent(self, event):
         super().mouseDoubleClickEvent(event)
         dialog = TableEditorDialog(self.table_id, self.controller, self.scene().views()[0])
         if dialog.exec() == QDialog.Accepted:
-            # ИСПРАВЛЕНИЕ: Используем прямую ссылку на main_window
             self.scene().views()[0].main_window.load_project_data()
         event.accept()
 
     def add_column(self, name: str, column_id: int, column_info: dict = None):
         col = ColumnItem(name, self, column_id, column_info, self.width)
         self.columns.append(col)
-        # ИСПРАВЛЕНИЕ: Убираем рекурсивный вызов
         self.scene().views()[0].add_column_to_map(col)
 
     def update_layout(self):
@@ -134,7 +174,7 @@ class TableItem(QGraphicsRectItem):
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
         if event.button() == Qt.LeftButton and event.scenePos() != event.lastScenePos():
-            pos = self.pos();
+            pos = self.pos()
             self.controller.update_table_position(self.diagram_object_id, int(pos.x()), int(pos.y()))
 
     def hoverEnterEvent(self, event):
@@ -149,8 +189,9 @@ class TableItem(QGraphicsRectItem):
         if change == QGraphicsItem.ItemPositionHasChanged:
             for column in self.columns:
                 for port in [column.left_port, column.right_port]:
-                    for connection in getattr(port, 'connections', []):
-                        connection.update_position()
+                    if hasattr(port, 'connections'):
+                        for connection in port.connections:
+                            connection.update_position()
         return super().itemChange(change, value)
 
 
@@ -158,10 +199,10 @@ class ConnectionLine(QGraphicsPathItem):
     def __init__(self, start_port, end_port, relationship_id=None):
         super().__init__()
         self.start_port, self.end_port, self.relationship_id = start_port, end_port, relationship_id
-        self.default_pen = QPen(QColor(80, 80, 80), 2);
+        self.default_pen = QPen(QColor(80, 80, 80), 2)
         self.highlight_pen = QPen(QColor(0, 180, 255), 3.5)
-        self.setPen(self.default_pen);
-        self.setFlag(QGraphicsItem.ItemIsSelectable, True);
+        self.setPen(self.default_pen)
+        self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.setZValue(-1)
         for port in [start_port, end_port]:
             if not hasattr(port, 'connections'): port.connections = []
@@ -169,7 +210,8 @@ class ConnectionLine(QGraphicsPathItem):
         self.update_position()
 
     def paint(self, painter, option, widget=None):
-        painter.setPen(self.pen()); painter.drawPath(self.path())
+        painter.setPen(self.pen());
+        painter.drawPath(self.path())
 
     def update_position(self):
         path = QPainterPath();
@@ -192,23 +234,23 @@ class ConnectionLine(QGraphicsPathItem):
 
     def set_highlighted(self, highlighted: bool):
         self.setPen(self.highlight_pen if highlighted else self.default_pen)
-        self.start_port.set_highlighted(highlighted);
+        self.start_port.set_highlighted(highlighted)
         self.start_port.column.set_highlighted(highlighted)
-        self.end_port.set_highlighted(highlighted);
+        self.end_port.set_highlighted(highlighted)
         self.end_port.column.set_highlighted(highlighted)
 
 
 class DiagramView(QGraphicsView):
     def __init__(self):
         super().__init__()
-        self.scene = QGraphicsScene();
+        self.scene = QGraphicsScene()
         self.setScene(self.scene)
-        self.setRenderHints(QPainter.Antialiasing);
+        self.setRenderHints(QPainter.Antialiasing)
         self.setBackgroundBrush(QBrush(QColor(245, 245, 245)))
-        self.setSceneRect(0, 0, 4000, 3000);
+        self.setSceneRect(0, 0, 4000, 3000)
         self.setDragMode(QGraphicsView.RubberBandDrag)
-        self.controller = None;
-        self.current_diagram = None;
+        self.controller = None
+        self.current_diagram = None
         self.main_window: QMainWindow = None
         self.table_items: Dict[int, TableItem] = {}
         self.column_map: Dict[int, ColumnItem] = {}
@@ -231,44 +273,80 @@ class DiagramView(QGraphicsView):
         for cid in ids_to_remove: del self.column_map[cid]
 
     def load_diagram_data(self, diagram, diagram_objects, relationships):
-        self.clear_diagram();
+        self.clear_diagram()
         self.current_diagram = diagram
         for d_obj in diagram_objects:
             table = d_obj.table
             item = TableItem(table.table_name, d_obj.pos_x, d_obj.pos_y, d_obj.object_id, table.table_id,
                              self.controller)
-            self.scene.addItem(item);
+            self.scene.addItem(item)
             self.table_items[table.table_id] = item
-            item.update_layout()  # Обновляем колонки из БД
+            item.update_layout()
         for rel in relationships:
             if not rel.relationship_columns: continue
             rel_col = rel.relationship_columns[0]
-            start = self.column_map.get(rel_col.start_column_id);
+            start = self.column_map.get(rel_col.start_column_id)
             end = self.column_map.get(rel_col.end_column_id)
-            if start and end: self.scene.addItem(ConnectionLine(start.right_port, end.left_port, rel.relationship_id))
+            if start and end:
+                self.scene.addItem(ConnectionLine(start.right_port, end.left_port, rel.relationship_id))
+                # Помечаем колонку как FK для отображения замка
+                end.is_fk = True
+                end._update_and_elide_text()
 
     def clear_diagram(self):
-        self.scene.clear(); self.table_items.clear(); self.column_map.clear(); self.first_port = None
+        self.scene.clear();
+        self.table_items.clear();
+        self.column_map.clear();
+        self.first_port = None
 
     def mousePressEvent(self, event):
-        super().mousePressEvent(event);
+        super().mousePressEvent(event)
         item = self.itemAt(event.pos())
         if event.button() == Qt.LeftButton and not item:
             for sel_item in self.scene.selectedItems(): sel_item.setSelected(False)
             if self.first_port: self.first_port.set_highlighted(False); self.first_port = None
         elif isinstance(item, PortItem):
             if not self.first_port:
-                self.first_port = item; self.first_port.set_highlighted(True)
+                self.first_port = item
+                self.first_port.set_highlighted(True)
             else:
+                start_port = self.first_port
+                end_port = item
                 self.first_port.set_highlighted(False)
-                if self.first_port.column.parent_table != item.column.parent_table: self.create_relationship(
-                    self.first_port, item)
                 self.first_port = None
+
+                if start_port.column.parent_table != end_port.column.parent_table:
+                    start_col = start_port.column
+                    end_col = end_port.column
+
+                    if start_col.data_type != end_col.data_type:
+                        msg_box = QMessageBox(self)
+                        msg_box.setIcon(QMessageBox.Warning)
+                        msg_box.setText("Типы данных не совпадают.")
+                        msg_box.setInformativeText(
+                            f"Тип у 🔑 {start_col.raw_name} - <b>{start_col.data_type}</b>, "
+                            f"а у 🔒 {end_col.raw_name} - <b>{end_col.data_type}</b>.<br><br>"
+                            f"Хотите изменить тип <b>{end_col.raw_name}</b> на <b>{start_col.data_type}</b> и создать связь?"
+                        )
+                        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+                        msg_box.setDefaultButton(QMessageBox.Yes)
+
+                        if msg_box.exec() == QMessageBox.Yes:
+                            self.controller.update_column_data_type(end_col.column_id, start_col.data_type)
+                            end_col.update_data_type(start_col.data_type)
+                            self.create_relationship(start_port, end_port)
+                    else:
+                        self.create_relationship(start_port, end_port)
 
     def create_relationship(self, start, end):
         new_rel = self.controller.add_relationship(self.current_diagram.project_id, start.column.column_id,
                                                    end.column.column_id)
-        if new_rel: self.scene.addItem(ConnectionLine(start, end, new_rel.relationship_id))
+        if new_rel:
+            self.scene.addItem(ConnectionLine(start, end, new_rel.relationship_id))
+            end.column.is_fk = True
+            end.column._update_and_elide_text()
+
+
 
     def contextMenuEvent(self, event):
         menu = QMenu(self);
@@ -309,7 +387,15 @@ class DiagramView(QGraphicsView):
         items = [it for it in self.scene.selectedItems() if isinstance(it, ConnectionLine)]
         if not items: return
         if QMessageBox.question(self, 'Подтверждение', f'Удалить {len(items)} связь(и)?') == QMessageBox.Yes:
-            for item in items: self.controller.delete_relationship(item.relationship_id); self.scene.removeItem(item)
+            for item in items:
+                end_column = item.end_port.column
+                self.controller.delete_relationship(item.relationship_id)
+                self.scene.removeItem(item)
+
+                is_still_fk = self.controller.is_column_foreign_key(end_column.column_id)
+                if end_column.is_fk != is_still_fk:
+                    end_column.is_fk = is_still_fk
+                    end_column._update_and_elide_text()
 
     def drawBackground(self, painter, rect):
         super().drawBackground(painter, rect);
