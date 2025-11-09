@@ -3,25 +3,31 @@
 from models.base import SessionLocal
 from models.diagram import Diagram, DiagramObject
 from models.table import Table, TableColumn
-from models.project import Project, Schema  # <-- Убедимся, что Project импортирован
+from models.project import Project, Schema
 from models.relationships import Relationship, RelationshipColumn
-from sqlalchemy.orm import joinedload
-from sqlalchemy.sql import func  # <-- Добавляем импорт func для работы с датой
+from sqlalchemy.orm import joinedload, Session
+from sqlalchemy.sql import func
 
 
 class DiagramController:
-    def get_or_create_diagram_for_project(self, project_id: int) -> Diagram:
-        session = SessionLocal()
+    def get_or_create_diagram_for_project(self, project_id: int, session: Session = None):
+        should_close_session = False
+        if session is None:
+            session = SessionLocal()
+            should_close_session = True
+
         try:
             diagram = session.query(Diagram).filter_by(project_id=project_id).first()
             if not diagram:
                 diagram = Diagram(diagram_name="Main Diagram", project_id=project_id)
-                session.add(diagram);
-                session.commit();
+                session.add(diagram)
+                # В SQLAlchemy 2.0+ коммит внутри транзакции безопасен для получения ID
+                session.commit()
                 session.refresh(diagram)
             return diagram
         finally:
-            session.close()
+            if should_close_session:
+                session.close()
 
     def get_diagram_details(self, diagram_id: int) -> list[DiagramObject]:
         session = SessionLocal()
@@ -31,29 +37,54 @@ class DiagramController:
         finally:
             session.close()
 
+    def add_existing_table_to_diagram(self, diagram_id: int, table_id: int, x: int, y: int, session: Session = None):
+        should_close_session = False
+        if session is None:
+            session = SessionLocal()
+            should_close_session = True
+        try:
+            new_diagram_object = DiagramObject(diagram_id=diagram_id, table_id=table_id, pos_x=x, pos_y=y)
+            session.add(new_diagram_object)
+            if should_close_session:
+                session.commit()
+            return new_diagram_object
+        except Exception as e:
+            print(f"Ошибка при добавлении существующей таблицы на диаграмму: {e}")
+            if should_close_session:
+                session.rollback()
+            return None
+        finally:
+            if should_close_session:
+                session.close()
+
     def add_new_table_to_diagram(self, diagram_id: int, project_id: int, table_name: str, x: int, y: int) -> (
             DiagramObject | None):
         session = SessionLocal()
         try:
             target_schema = session.query(Schema).filter_by(project_id=project_id).first()
-            if not target_schema: raise Exception(f"Не найдено схемы для проекта {project_id}")
+            if not target_schema:
+                raise Exception(f"Не найдено схемы для проекта {project_id}")
+
             new_table = Table(table_name=table_name, schema_id=target_schema.schema_id)
-            session.add(new_table);
-            session.commit();
+            session.add(new_table)
+            session.commit()
             session.refresh(new_table)
+
             default_col = TableColumn(column_name="id", data_type="integer", table_id=new_table.table_id,
                                       is_primary_key=True, is_nullable=False)
-            session.add(default_col);
+            session.add(default_col)
             session.commit()
-            new_diagram_object = DiagramObject(diagram_id=diagram_id, table_id=new_table.table_id, pos_x=x, pos_y=y)
-            session.add(new_diagram_object);
-            session.commit()
+
+            new_diagram_object = self.add_existing_table_to_diagram(diagram_id, new_table.table_id, x, y,
+                                                                    session=session)
+            session.commit()  # Коммитим добавление DiagramObject
+
             session.refresh(new_diagram_object, attribute_names=['table'])
             session.refresh(new_diagram_object.table, attribute_names=['columns'])
             return new_diagram_object
         except Exception as e:
-            session.rollback();
-            print(f"Ошибка при добавлении таблицы: {e}");
+            session.rollback()
+            print(f"Ошибка при добавлении новой таблицы на диаграмму: {e}")
             return None
         finally:
             session.close()
@@ -62,15 +93,16 @@ class DiagramController:
         session = SessionLocal()
         try:
             obj = session.get(DiagramObject, diagram_object_id)
-            if obj: obj.pos_x = x; obj.pos_y = y; session.commit()
+            if obj:
+                obj.pos_x = x
+                obj.pos_y = y
+                session.commit()
         except Exception:
             session.rollback()
         finally:
             session.close()
 
-    # --- VVV --- НОВЫЙ МЕТОД ДЛЯ ОБНОВЛЕНИЯ ДАТЫ ПРОЕКТА --- VVV ---
     def update_project_timestamp(self, project_id: int):
-        """Принудительно обновляет поле updated_at для указанного проекта."""
         session = SessionLocal()
         try:
             project = session.query(Project).filter(Project.project_id == project_id).first()
@@ -83,13 +115,13 @@ class DiagramController:
         finally:
             session.close()
 
-    # --- ^^^ --- КОНЕЦ НОВОГО МЕТОДА --- ^^^ ---
-
     def delete_table_from_diagram(self, diagram_object_id: int):
         session = SessionLocal()
         try:
             obj = session.get(DiagramObject, diagram_object_id)
-            if obj: session.delete(obj); session.commit()
+            if obj:
+                session.delete(obj)
+                session.commit()
         except Exception:
             session.rollback()
         finally:
@@ -108,15 +140,16 @@ class DiagramController:
             existing_columns = {c.column_id: c for c in session.query(TableColumn).filter_by(table_id=table_id)}
             data_ids = {d['id'] for d in columns_data if d.get('id')}
             for col_id, col_obj in existing_columns.items():
-                if col_id not in data_ids: session.delete(col_obj)
+                if col_id not in data_ids:
+                    session.delete(col_obj)
             for data in columns_data:
                 col_id = data.get('id')
                 if col_id in existing_columns:
-                    col = existing_columns[col_id];
-                    col.column_name = data['name'];
+                    col = existing_columns[col_id]
+                    col.column_name = data['name']
                     col.data_type = data['type']
-                    col.is_primary_key = data['pk'];
-                    col.is_nullable = not data['nn'];
+                    col.is_primary_key = data['pk']
+                    col.is_nullable = not data['nn']
                     col.is_unique = data.get('uq', False)
                 else:
                     col = TableColumn(table_id=table_id, column_name=data['name'], data_type=data['type'],
@@ -125,7 +158,7 @@ class DiagramController:
                     session.add(col)
             session.commit()
         except Exception as e:
-            session.rollback();
+            session.rollback()
             print(f"Ошибка при синхронизации колонок: {e}")
         finally:
             session.close()
@@ -134,9 +167,11 @@ class DiagramController:
         session = SessionLocal()
         try:
             column = session.get(TableColumn, column_id)
-            if column: column.data_type = new_data_type; session.commit()
+            if column:
+                column.data_type = new_data_type
+                session.commit()
         except Exception as e:
-            session.rollback();
+            session.rollback()
             print(f"Ошибка при обновлении типа данных колонки: {e}")
         finally:
             session.close()
@@ -153,7 +188,7 @@ class DiagramController:
                          end_port_side: str) -> Relationship:
         session = SessionLocal()
         try:
-            start_col = session.get(TableColumn, start_col_id);
+            start_col = session.get(TableColumn, start_col_id)
             end_col = session.get(TableColumn, end_col_id)
             if not start_col or not end_col: return None
             constraint_name = f"fk_{start_col.table.table_name}_{end_col.table.table_name}"
@@ -162,14 +197,14 @@ class DiagramController:
             rel_col = RelationshipColumn(
                 start_column_id=start_col_id, end_column_id=end_col_id,
                 start_port_side=start_port_side, end_port_side=end_port_side)
-            new_rel.relationship_columns.append(rel_col);
-            session.add(new_rel);
-            session.commit();
+            new_rel.relationship_columns.append(rel_col)
+            session.add(new_rel)
+            session.commit()
             session.refresh(new_rel)
             return new_rel
         except Exception as e:
-            session.rollback();
-            print(f"Ошибка при создании связи: {e}");
+            session.rollback()
+            print(f"Ошибка при создании связи: {e}")
             return None
         finally:
             session.close()
@@ -178,10 +213,13 @@ class DiagramController:
         session = SessionLocal()
         try:
             rel = session.get(Relationship, relationship_id)
-            if rel: session.delete(rel); session.commit(); return True
+            if rel:
+                session.delete(rel)
+                session.commit()
+                return True
             return False
         except Exception:
-            session.rollback();
+            session.rollback()
             return False
         finally:
             session.close()
