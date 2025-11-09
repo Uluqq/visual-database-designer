@@ -39,7 +39,7 @@ class MainWindow(QMainWindow):
 
         self.exit_button = QPushButton(self.main_container)
         # Используем ту же иконку для примера. Замените на свою.
-        self.exit_button.setIcon(QIcon(':/icons/save-icon.png'))
+        self.exit_button.setIcon(QIcon(':/icons/exit-icon.png'))
         self.exit_button.setIconSize(QSize(24, 24))
         self.exit_button.setFixedSize(QSize(36, 36))
         self.exit_button.setToolTip("Выход к выбору проекта")
