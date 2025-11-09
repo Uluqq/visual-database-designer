@@ -106,11 +106,11 @@ class DiagramController:
                     col.data_type = data['type']
                     col.is_primary_key = data['pk']
                     col.is_nullable = not data['nn']
-                    col.is_unique = data.get('uq', False)  # Обрабатываем ключ 'uq'
+                    col.is_unique = data.get('uq', False)
                 else:
                     col = TableColumn(table_id=table_id, column_name=data['name'], data_type=data['type'],
                                       is_primary_key=data['pk'], is_nullable=not data['nn'],
-                                      is_unique=data.get('uq', False)) # Обрабатываем ключ 'uq'
+                                      is_unique=data.get('uq', False))
                     session.add(col)
             session.commit()
         except Exception as e:
@@ -120,7 +120,6 @@ class DiagramController:
             session.close()
 
     def update_column_data_type(self, column_id: int, new_data_type: str):
-        """Обновляет только тип данных для одной колонки."""
         session = SessionLocal()
         try:
             column = session.get(TableColumn, column_id)
@@ -141,24 +140,33 @@ class DiagramController:
         finally:
             session.close()
 
-    def add_relationship(self, project_id: int, start_col_id: int, end_col_id: int) -> Relationship:
+    def add_relationship(self, project_id: int, start_col_id: int, end_col_id: int, start_port_side: str, end_port_side: str) -> Relationship:
+        """Создает новую связь с учетом информации о портах."""
         session = SessionLocal()
         try:
             start_col = session.get(TableColumn, start_col_id)
             end_col = session.get(TableColumn, end_col_id)
             if not start_col or not end_col: return None
+
             constraint_name = f"fk_{start_col.table.table_name}_{end_col.table.table_name}"
             new_rel = Relationship(project_id=project_id, start_table_id=start_col.table_id,
                                    end_table_id=end_col.table_id, constraint_name=constraint_name)
-            rel_col = RelationshipColumn(start_column_id=start_col_id, end_column_id=end_col_id)
+
+            rel_col = RelationshipColumn(
+                start_column_id=start_col_id,
+                end_column_id=end_col_id,
+                start_port_side=start_port_side,
+                end_port_side=end_port_side
+            )
             new_rel.relationship_columns.append(rel_col)
-            session.add(new_rel);
-            session.commit();
+
+            session.add(new_rel)
+            session.commit()
             session.refresh(new_rel)
             return new_rel
         except Exception as e:
-            session.rollback();
-            print(f"Ошибка при создании связи: {e}");
+            session.rollback()
+            print(f"Ошибка при создании связи: {e}")
             return None
         finally:
             session.close()
@@ -175,7 +183,7 @@ class DiagramController:
             session.close()
 
     def is_column_foreign_key(self, column_id: int) -> bool:
-
+        """Проверяет, является ли колонка целью (end_column) для какой-либо связи."""
         session = SessionLocal()
         try:
             count = session.query(RelationshipColumn).filter_by(end_column_id=column_id).count()

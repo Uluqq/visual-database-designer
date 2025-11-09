@@ -1,6 +1,6 @@
 # models/relationships.py
 from sqlalchemy import Column, Integer, String, ForeignKey, PrimaryKeyConstraint
-from sqlalchemy.orm import relationship  # <-- Это импорт ФУНКЦИИ
+from sqlalchemy.orm import relationship
 from .base import Base
 
 
@@ -19,8 +19,6 @@ class Relationship(Base):
     start_table = relationship("Table", foreign_keys=[start_table_id], back_populates="start_relationships")
     end_table = relationship("Table", foreign_keys=[end_table_id], back_populates="end_relationships")
 
-    # ИЗМЕНЕНО: Атрибут переименован с 'columns' на 'relationship_columns' для ясности.
-    # Обратная связь теперь указывает на 'parent_relationship'.
     relationship_columns = relationship("RelationshipColumn", back_populates="parent_relationship",
                                         cascade="all, delete-orphan")
 
@@ -36,10 +34,12 @@ class RelationshipColumn(Base):
     start_column_id = Column(Integer, ForeignKey('columns.column_id'))
     end_column_id = Column(Integer, ForeignKey('columns.column_id'))
 
-    # ИЗМЕНЕНО: Атрибут переименован с 'relationship' на 'parent_relationship'.
-    # Обратная связь теперь указывает на 'relationship_columns'.
+    # V-- ДОБАВЬТЕ ЭТИ ДВА СТОЛБЦА --V
+    start_port_side = Column(String(5), nullable=False, server_default='right')  # 'left' or 'right'
+    end_port_side = Column(String(5), nullable=False, server_default='left')    # 'left' or 'right'
+    # ^-- КОНЕЦ ДОБАВЛЕНИЯ --^
+
     parent_relationship = relationship("Relationship", back_populates="relationship_columns")
 
-    # Теперь эти вызовы работают, т.к. имя 'relationship' ссылается на импортированную ФУНКЦИЮ.
     start_column = relationship("TableColumn", foreign_keys=[start_column_id])
     end_column = relationship("TableColumn", foreign_keys=[end_column_id])

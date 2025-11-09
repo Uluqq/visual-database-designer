@@ -1,0 +1,7 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+<qresource prefix="/icons">
+    <file alias="save-icon.png">icons/save_icon.png</file>
+    <!-- Другие ваши иконки, если есть -->
+</qresource>
+</RCC>

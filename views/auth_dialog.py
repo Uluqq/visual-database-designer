@@ -9,8 +9,7 @@ from controllers.user_controller import UserController
 
 
 class AuthDialog(QDialog):
-    # Сигнал, который будет испускаться при успешной аутентификации
-    # Он будет передавать объект пользователя (в нашем случае - "фальшивый")
+    # Сигнал, который будет испускаться при успешной аутентифицикации
     authenticated = Signal(object)
 
     def __init__(self, parent=None):
@@ -18,20 +17,17 @@ class AuthDialog(QDialog):
         self.setWindowTitle("Вход / Регистрация")
         self.setModal(True)
         self.user_controller = UserController()
+        # V-- ВАЖНО: Инициализируем атрибут, чтобы он существовал в любом случае --V
+        self.current_user = None
 
-        # Главный макет
         self.main_layout = QVBoxLayout(self)
-
-        # QStackedWidget для переключения между формами входа и регистрации
         self.stacked_widget = QStackedWidget()
         self.main_layout.addWidget(self.stacked_widget)
 
-        # Создаем и добавляем виджеты для входа и регистрации
         self.login_widget = self._create_login_widget()
         self.register_widget = self._create_register_widget()
         self.stacked_widget.addWidget(self.login_widget)
         self.stacked_widget.addWidget(self.register_widget)
-
         self.setMinimumWidth(350)
 
     def _create_login_widget(self):
@@ -59,7 +55,6 @@ class AuthDialog(QDialog):
         layout.addLayout(form_layout)
         layout.addWidget(login_button)
         layout.addWidget(switch_to_register_button, 0, Qt.AlignCenter)
-
         return widget
 
     def _create_register_widget(self):
@@ -93,7 +88,6 @@ class AuthDialog(QDialog):
         layout.addLayout(form_layout)
         layout.addWidget(register_button)
         layout.addWidget(switch_to_login_button, 0, Qt.AlignCenter)
-
         return widget
 
     def handle_login(self):
@@ -106,6 +100,12 @@ class AuthDialog(QDialog):
 
         user = self.user_controller.authenticate_user(username, password)
         if user:
+            # --- VVV --- ВОТ ИСПРАВЛЕНИЕ --- VVV ---
+            # Сохраняем успешно аутентифицированного пользователя в атрибут класса.
+            # Теперь извне (в main.py) можно будет безопасно получить к нему доступ.
+            self.current_user = user
+            # --- ^^^ --- КОНЕЦ ИСПРАВЛЕНИЯ --- ^^^ ---
+
             self.authenticated.emit(user)
             self.accept()
         else:
