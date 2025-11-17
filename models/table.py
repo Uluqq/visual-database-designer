@@ -28,20 +28,17 @@ class TableColumn(Base):
     column_id = Column(Integer, primary_key=True)
     column_name = Column(String(100), nullable=False)
     data_type = Column(String(50), nullable=False)
-
-    # --- ДОБАВЛЕННЫЕ ПОЛЯ ---
     is_primary_key = Column(Boolean, default=False, nullable=False)
     is_unique = Column(Boolean, default=False, nullable=False)
     is_nullable = Column(Boolean, default=True, nullable=False)
     default_value = Column(String(255), nullable=True)
-    # ---
+
 
     col_num = Column(Integer)
     table_id = Column(Integer, ForeignKey('tables.table_id'), nullable=False)
     table = relationship("Table", back_populates="columns")
 
 
-# --- Остальные классы остаются для совместимости, но мы их пока не используем ---
 class DbIndex(Base):
     __tablename__ = 'indexes'
     index_id = Column(Integer, primary_key=True)

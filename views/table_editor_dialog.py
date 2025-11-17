@@ -1,120 +1,109 @@
 # views/table_editor_dialog.py
-
-from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem,
-    QDialogButtonBox, QAbstractItemView, QHeaderView, QCheckBox, QWidget,
-    QHBoxLayout, QPushButton, QComboBox
-)
+from PySide6.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout, QHBoxLayout, QWidget, QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView, QPushButton, QComboBox, QCheckBox, QAbstractItemView, QMessageBox, QTextEdit
 from PySide6.QtCore import Qt
-
-
+from controllers.table_controller import TableController
+from .index_editor_dialog import IndexEditorDialog
+from models.table import DbIndex
 class TableEditorDialog(QDialog):
     DATA_TYPES = ["integer", "varchar", "text", "boolean", "date", "timestamp", "numeric"]
-
-    def __init__(self, table_id, controller, parent=None):
+    def __init__(self, table_id, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Редактор таблицы")
-        self.setMinimumSize(800, 400)
-
-        self.table_id = table_id
-        self.controller = controller
-
-        self.table_widget = QTableWidget()
-        self.table_widget.setColumnCount(5)
-        self.table_widget.setHorizontalHeaderLabels(["Column Name", "Datatype", "PK", "NN", "UQ"])
-        self.table_widget.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.table_widget.setSelectionMode(QAbstractItemView.SingleSelection)
-
-        self.add_button = QPushButton("Добавить колонку")
-        self.remove_button = QPushButton("Удалить колонку")
-
+        self.setWindowTitle("Редактор таблицы"); self.setMinimumSize(800, 500); self.table_id = table_id
+        self.controller = TableController()
+        main_layout = QVBoxLayout(self); self.tab_widget = QTabWidget(); main_layout.addWidget(self.tab_widget)
+        self.columns_widget = self._create_columns_tab(); self.indexes_widget = self._create_indexes_tab(); self.notes_widget = self._create_notes_tab()
+        self.tab_widget.addTab(self.columns_widget, "Колонки"); self.tab_widget.addTab(self.indexes_widget, "Индексы"); self.tab_widget.addTab(self.notes_widget, "Заметки")
         button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-
-        h_layout = QHBoxLayout()
-        h_layout.addStretch()
-        h_layout.addWidget(self.add_button)
-        h_layout.addWidget(self.remove_button)
-
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.table_widget)
-        layout.addLayout(h_layout)
-        layout.addWidget(button_box)
-
-        button_box.accepted.connect(self._save_changes)
-        button_box.rejected.connect(self.reject)
-        self.add_button.clicked.connect(self._add_row)
-        self.remove_button.clicked.connect(self._remove_row)
-
-        self._load_columns()
-
-    def _load_columns(self):
-        columns = self.controller.get_columns_for_table(self.table_id)
-        self.table_widget.setRowCount(len(columns))
-
+        button_box.accepted.connect(self.on_accept); button_box.rejected.connect(self.reject); main_layout.addWidget(button_box)
+        self._load_all_data()
+    def _create_columns_tab(self):
+        widget = QWidget(); layout = QVBoxLayout(widget)
+        self.cols_table = QTableWidget(); self.cols_table.setColumnCount(6)
+        self.cols_table.setHorizontalHeaderLabels(["Имя", "Тип", "PK", "NN", "UQ", "По умолчанию"]); self.cols_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.cols_table.setSelectionMode(QAbstractItemView.SingleSelection); layout.addWidget(self.cols_table)
+        buttons_layout = QHBoxLayout(); add_col_button = QPushButton("Добавить"); remove_col_button = QPushButton("Удалить")
+        buttons_layout.addStretch(); buttons_layout.addWidget(add_col_button); buttons_layout.addWidget(remove_col_button); layout.addLayout(buttons_layout)
+        add_col_button.clicked.connect(self._add_column_row); remove_col_button.clicked.connect(self._remove_column_row)
+        return widget
+    def _create_indexes_tab(self):
+        widget = QWidget(); layout = QVBoxLayout(widget)
+        self.indexes_table = QTableWidget(); self.indexes_table.setColumnCount(3)
+        self.indexes_table.setHorizontalHeaderLabels(["Имя", "Тип", "Колонки"]); self.indexes_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.indexes_table.setSelectionBehavior(QAbstractItemView.SelectRows); self.indexes_table.setEditTriggers(QAbstractItemView.NoEditTriggers); self.indexes_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        layout.addWidget(self.indexes_table)
+        buttons_layout = QHBoxLayout(); add_idx_button = QPushButton("Добавить..."); edit_idx_button = QPushButton("Редактировать..."); remove_idx_button = QPushButton("Удалить")
+        buttons_layout.addStretch(); buttons_layout.addWidget(add_idx_button); buttons_layout.addWidget(edit_idx_button); buttons_layout.addWidget(remove_idx_button); layout.addLayout(buttons_layout)
+        add_idx_button.clicked.connect(self.handle_add_index); edit_idx_button.clicked.connect(self.handle_edit_index); remove_idx_button.clicked.connect(self.handle_delete_index)
+        return widget
+    def _create_notes_tab(self):
+        widget = QWidget(); layout = QVBoxLayout(widget)
+        self.notes_text_edit = QTextEdit(); self.notes_text_edit.setPlaceholderText("Введите здесь описание таблицы, ее назначение и т.д.")
+        layout.addWidget(self.notes_text_edit); return widget
+    def _center_widget_in_cell(self, table, row, col, widget):
+        cell_widget = QWidget(); layout = QHBoxLayout(cell_widget)
+        layout.addWidget(widget); layout.setAlignment(Qt.AlignCenter); layout.setContentsMargins(0, 0, 0, 0); table.setCellWidget(row, col, cell_widget)
+    def _load_all_data(self):
+        table_data = self.controller.get_table_details(self.table_id)
+        if not table_data:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить данные для таблицы ID={self.table_id}"); self.reject(); return
+        self._load_columns(list(table_data.columns)); self._load_indexes(list(table_data.indexes)); self.notes_text_edit.setText(table_data.notes or "")
+    def _load_columns(self, columns):
+        columns.sort(key=lambda c: c.column_id)
+        self.cols_table.setRowCount(len(columns))
         for row, col in enumerate(columns):
-            self.table_widget.setVerticalHeaderItem(row, QTableWidgetItem(str(col.column_id)))
-            self.table_widget.setItem(row, 0, QTableWidgetItem(col.column_name))
-
-            combo = QComboBox();
-            combo.addItems(self.DATA_TYPES);
-            combo.setCurrentText(col.data_type)
-            self.table_widget.setCellWidget(row, 1, combo)
-
-            pk_check = QCheckBox();
-            pk_check.setChecked(col.is_primary_key)
-            self._center_widget_in_cell(row, 2, pk_check)
-
-            nn_check = QCheckBox();
-            nn_check.setChecked(not col.is_nullable)
-            self._center_widget_in_cell(row, 3, nn_check)
-
-            uq_check = QCheckBox();
-            uq_check.setChecked(col.is_unique);
-            uq_check.setEnabled(False)
-            self._center_widget_in_cell(row, 4, uq_check)
-
-    def _center_widget_in_cell(self, row, col, widget):
-        cell_widget = QWidget();
-        layout = QHBoxLayout(cell_widget)
-        layout.addWidget(widget);
-        layout.setAlignment(Qt.AlignCenter);
-        layout.setContentsMargins(0, 0, 0, 0)
-        self.table_widget.setCellWidget(row, col, cell_widget)
-
-    def _add_row(self):
-        row = self.table_widget.rowCount();
-        self.table_widget.insertRow(row)
-        self.table_widget.setVerticalHeaderItem(row, QTableWidgetItem(""))
-        self.table_widget.setItem(row, 0, QTableWidgetItem("new_column"))
-
-        combo = QComboBox();
-        combo.addItems(self.DATA_TYPES)
-        self.table_widget.setCellWidget(row, 1, combo)
-
-        self._center_widget_in_cell(row, 2, QCheckBox())
-        self._center_widget_in_cell(row, 3, QCheckBox())
-        uq_check = QCheckBox();
-        # uq_check.setEnabled(False)
-        self._center_widget_in_cell(row, 4, uq_check)
-
-    def _remove_row(self):
-        current_row = self.table_widget.currentRow()
-        if current_row >= 0: self.table_widget.removeRow(current_row)
-
-    def _save_changes(self):
+            self.cols_table.setVerticalHeaderItem(row, QTableWidgetItem(str(col.column_id))); self.cols_table.setItem(row, 0, QTableWidgetItem(col.column_name))
+            combo = QComboBox(); combo.addItems(self.DATA_TYPES); combo.setCurrentText(col.data_type); self.cols_table.setCellWidget(row, 1, combo)
+            pk_check = QCheckBox(); pk_check.setChecked(col.is_primary_key); self._center_widget_in_cell(self.cols_table, row, 2, pk_check)
+            nn_check = QCheckBox(); nn_check.setChecked(not col.is_nullable); self._center_widget_in_cell(self.cols_table, row, 3, nn_check)
+            uq_check = QCheckBox(); uq_check.setChecked(col.is_unique); self._center_widget_in_cell(self.cols_table, row, 4, uq_check)
+            self.cols_table.setItem(row, 5, QTableWidgetItem(col.default_value or ""))
+    def _add_column_row(self):
+        row = self.cols_table.rowCount(); self.cols_table.insertRow(row); self.cols_table.setVerticalHeaderItem(row, QTableWidgetItem(""))
+        self.cols_table.setItem(row, 0, QTableWidgetItem("new_column")); combo = QComboBox(); combo.addItems(self.DATA_TYPES); self.cols_table.setCellWidget(row, 1, combo)
+        self._center_widget_in_cell(self.cols_table, row, 2, QCheckBox()); self._center_widget_in_cell(self.cols_table, row, 3, QCheckBox()); self._center_widget_in_cell(self.cols_table, row, 4, QCheckBox())
+        self.cols_table.setItem(row, 5, QTableWidgetItem(""))
+    def _remove_column_row(self):
+        current_row = self.cols_table.currentRow()
+        if current_row >= 0: self.cols_table.removeRow(current_row)
+    def _save_columns(self):
         columns_data = []
-        for row in range(self.table_widget.rowCount()):
-            header = self.table_widget.verticalHeaderItem(row)
-            name = self.table_widget.item(row, 0)
+        for row in range(self.cols_table.rowCount()):
+            header = self.cols_table.verticalHeaderItem(row); name = self.cols_table.item(row, 0)
             if not name or not name.text(): continue
-
             columns_data.append({
-                "id": int(header.text()) if header and header.text() else None,
-                "name": name.text(),
-                "type": self.table_widget.cellWidget(row, 1).currentText(),
-                "pk": self.table_widget.cellWidget(row, 2).layout().itemAt(0).widget().isChecked(),
-                "nn": self.table_widget.cellWidget(row, 3).layout().itemAt(0).widget().isChecked(),
-                "uq": self.table_widget.cellWidget(row, 4).layout().itemAt(0).widget().isChecked(),
-            })
+                "id": int(header.text()) if header and header.text() else None, "name": name.text(),
+                "type": self.cols_table.cellWidget(row, 1).currentText(),
+                "pk": self.cols_table.cellWidget(row, 2).layout().itemAt(0).widget().isChecked(),
+                "nn": self.cols_table.cellWidget(row, 3).layout().itemAt(0).widget().isChecked(),
+                "uq": self.cols_table.cellWidget(row, 4).layout().itemAt(0).widget().isChecked(),
+                "default": self.cols_table.item(row, 5).text() })
         self.controller.sync_columns_for_table(self.table_id, columns_data)
-        self.accept()
+    def _save_notes(self):
+        self.controller.update_table_notes(self.table_id, self.notes_text_edit.toPlainText())
+    def _load_indexes(self, indexes):
+        self.indexes_table.clearContents(); self.indexes_table.setRowCount(len(indexes))
+        for row, index in enumerate(indexes):
+            name_item = QTableWidgetItem(index.index_name); name_item.setData(Qt.UserRole, index); self.indexes_table.setItem(row, 0, name_item)
+            index_type = "UNIQUE" if index.is_unique else "INDEX"; self.indexes_table.setItem(row, 1, QTableWidgetItem(index_type))
+            sorted_cols = sorted(index.index_columns, key=lambda ic: ic.order)
+            col_names = ", ".join([ic.column.column_name for ic in sorted_cols]); self.indexes_table.setItem(row, 2, QTableWidgetItem(col_names))
+    def handle_add_index(self):
+        all_columns = self.controller.get_columns_for_table(self.table_id)
+        if not all_columns: QMessageBox.warning(self, "Ошибка", "Нельзя создать индекс, пока в таблице нет колонок."); return
+        dialog = IndexEditorDialog(all_columns, parent=self)
+        if dialog.exec() == QDialog.Accepted: self.controller.create_or_update_index(self.table_id, None, dialog.result_data); self._load_all_data()
+    def handle_edit_index(self):
+        current_row = self.indexes_table.currentRow()
+        if current_row < 0: QMessageBox.information(self, "Внимание", "Пожалуйста, выберите индекс для редактирования."); return
+        index_obj: DbIndex = self.indexes_table.item(current_row, 0).data(Qt.UserRole)
+        all_columns = self.controller.get_columns_for_table(self.table_id)
+        dialog = IndexEditorDialog(all_columns, index_to_edit=index_obj, parent=self)
+        if dialog.exec() == QDialog.Accepted: self.controller.create_or_update_index(self.table_id, index_obj.index_id, dialog.result_data); self._load_all_data()
+    def handle_delete_index(self):
+        current_row = self.indexes_table.currentRow()
+        if current_row < 0: QMessageBox.information(self, "Внимание", "Пожалуйста, выберите индекс для удаления."); return
+        index_obj: DbIndex = self.indexes_table.item(current_row, 0).data(Qt.UserRole)
+        reply = QMessageBox.question(self, "Подтверждение", f"Вы уверены, что хотите удалить индекс '{index_obj.index_name}'?", QMessageBox.Yes | QMessageBox.No)
+        if reply == QMessageBox.Yes: self.controller.delete_index(index_obj.index_id); self._load_all_data()
+    def on_accept(self):
+        self._save_columns(); self._save_notes(); self.accept()

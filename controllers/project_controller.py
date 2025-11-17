@@ -47,17 +47,10 @@ class ProjectController:
             new_schema = Schema(schema_name="public")
             new_project.schemas.append(new_schema)
             session.add(new_project)
-
-            # --- VVV --- ИЗМЕНЕНИЕ: Используем commit() вместо flush() --- VVV ---
-            # Коммитим создание проекта. Это завершает транзакцию и гарантирует,
-            # что project_id будет доступен в любой новой сессии.
             session.commit()
             session.refresh(new_project)
-            # --- ^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^ ---
 
             diagram_ctrl = DiagramController()
-            # Этот метод теперь будет работать в своей собственной, новой транзакции,
-            # но он найдет проект, так как он уже закоммичен.
             main_diagram = diagram_ctrl.get_or_create_diagram_for_project(new_project.project_id)
 
             created_tables = {}
@@ -74,17 +67,9 @@ class ProjectController:
                         is_primary_key=col_info['is_pk'], is_nullable=col_info['nullable'])
                     new_table.columns.append(new_col)
                     created_columns[f"{table_info['name']}.{col_info['name']}"] = new_col
-
-            # --- VVV --- ИЗМЕНЕНИЕ: Снова используем commit() --- VVV ---
-            # Коммитим создание всех таблиц и колонок.
-            # После этого у всех объектов Table в created_tables будут ID.
             session.commit()
-            # --- ^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^ ---
-
-            # 3. Создание DiagramObjects
             x, y, col_count = 50, 50, 0
             for table_name, table_obj in created_tables.items():
-                # Этот метод будет работать в своей собственной транзакции
                 diagram_ctrl.add_existing_table_to_diagram(
                     main_diagram.diagram_id, table_obj.table_id, x, y
                 )
@@ -104,8 +89,6 @@ class ProjectController:
                     start_col = created_columns.get(f"{fk_info['target_table']}.{fk_info['target_column']}")
                     end_col = created_columns.get(f"{fk_info['source_table']}.{fk_info['source_column']}")
                     if not start_col or not end_col: continue
-
-                    # Обновляем объекты, чтобы получить их ID из БД
                     session.refresh(start_col)
                     session.refresh(end_col)
 
@@ -116,7 +99,7 @@ class ProjectController:
                         RelationshipColumn(start_column_id=start_col.column_id, end_column_id=end_col.column_id))
                     session.add(new_rel)
 
-            session.commit()  # Финальный коммит для связей
+            session.commit()
             return new_project, "Проект успешно импортирован!"
         except Exception as e:
             session.rollback()
