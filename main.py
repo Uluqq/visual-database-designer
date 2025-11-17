@@ -2,20 +2,22 @@
 
 import sys
 from PySide6.QtWidgets import QApplication, QDialog
+# --- VVV --- ДОБАВЛЯЕМ НОВЫЕ ИМПОРТЫ --- VVV ---
+from PySide6.QtCore import QTranslator, QLibraryInfo
+# --- ^^^ --- КОНЕЦ ИЗМЕНЕНИЙ --- ^^^ ---
 from views.main_window import MainWindow
 from views.auth_dialog import AuthDialog
 from views.project_selection_dialog import ProjectSelectionDialog
 from models.base import init_db
 from models.user import User
 from models.project import Project
-import resources_rc  # Убедитесь, что этот импорт присутствует
+import resources_rc
 
 
 class ApplicationController:
     """
     Класс для управления жизненным циклом окон приложения.
     """
-
     def __init__(self):
         self.auth_dialog = None
         self.project_dialog = None
@@ -34,7 +36,6 @@ class ApplicationController:
             self.current_user = self.auth_dialog.current_user
             self.show_project_dialog()
         else:
-            # Пользователь закрыл окно входа, завершаем приложение
             sys.exit(0)
 
     def show_project_dialog(self):
@@ -44,13 +45,11 @@ class ApplicationController:
             selected_project = self.project_dialog.selected_project
             self.show_main_window(selected_project)
         else:
-            # Пользователь закрыл окно выбора проекта, завершаем приложение
             sys.exit(0)
 
     def show_main_window(self, project: Project):
         """Показывает главное окно с диаграммой."""
         self.main_window = MainWindow(user=self.current_user, project=project)
-        # Подключаем сигнал выхода из MainWindow к слоту, который покажет окно выбора проекта
         self.main_window.project_selection_requested.connect(self.handle_exit_to_project_selection)
         self.main_window.show()
 
@@ -58,7 +57,6 @@ class ApplicationController:
         """Обрабатывает выход из главного окна к выбору проекта."""
         if self.main_window:
             self.main_window.close()
-        # Запускаем цикл выбора проекта заново
         self.show_project_dialog()
 
 
@@ -68,5 +66,18 @@ if __name__ == "__main__":
     print("База данных готова.")
 
     app = QApplication(sys.argv)
+
+    # --- VVV --- НОВЫЙ КОД ДЛЯ ЛОКАЛИЗАЦИИ --- VVV ---
+    # Загружаем стандартные переводы Qt для диалогов (QColorDialog, QMessageBox и др.)
+    translator = QTranslator()
+    # Находим путь к встроенным в PySide6 файлам перевода
+    translations_path = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+    if translator.load("qtbase_ru", translations_path):
+        app.installTranslator(translator)
+        print("Русский перевод для стандартных диалогов Qt успешно загружен.")
+    else:
+        print("ПРЕДУПРЕЖДЕНИЕ: Файл перевода qtbase_ru.qm не найден. Диалоги могут быть на английском.")
+    # --- ^^^ --- КОНЕЦ НОВОГО КОДА --- ^^^ ---
+
     controller = ApplicationController()
     sys.exit(controller.run())
