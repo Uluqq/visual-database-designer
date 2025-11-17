@@ -6,8 +6,8 @@ from PySide6.QtWidgets import (
     QGraphicsEllipseItem, QMessageBox, QInputDialog, QGraphicsItem, QDialog,
     QMainWindow, QColorDialog
 )
-from PySide6.QtCore import Qt, QRectF, QPointF, QSettings
-from PySide6.QtGui import QBrush, QColor, QPen, QPainter, QPainterPath, QFontMetrics
+from PySide6.QtCore import Qt, QRectF, QPointF, QSettings, Signal
+from PySide6.QtGui import QBrush, QColor, QPen, QPainter, QPainterPath, QFontMetrics, QImage
 from .table_editor_dialog import TableEditorDialog
 from controllers.table_controller import TableController
 from typing import Dict
@@ -241,6 +241,7 @@ class ConnectionLine(QGraphicsPathItem):
 
 
 class DiagramView(QGraphicsView):
+    project_structure_changed = Signal()
     def __init__(self, parent=None):
         super().__init__(parent)
         self.scene = QGraphicsScene()
@@ -252,6 +253,7 @@ class DiagramView(QGraphicsView):
         self.controller = None
         self.current_diagram = None
         self.main_window: QMainWindow = None
+        self.setAcceptDrops(True)
         self.table_items: Dict[int, TableItem] = {}
         self.column_map: Dict[int, ColumnItem] = {}
         self.first_port: PortItem = None
@@ -307,6 +309,51 @@ class DiagramView(QGraphicsView):
                     self.create_relationship(self.first_port, item)
                 self.first_port = None
 
+    def dragEnterEvent(self, event):
+        # Проверяем, что перетаскиваемые данные содержат текст (наш ID таблицы)
+        if event.mimeData().hasText():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasText():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        if event.mimeData().hasText():
+            data_str = event.mimeData().text()
+            # Ожидаем данные в формате "table_id:ID"
+            if data_str.startswith("table_id:"):
+                try:
+                    table_id = int(data_str.split(":")[1])
+
+                    # Проверяем, нет ли уже этой таблицы на диаграмме
+                    if table_id in self.table_items:
+                        QMessageBox.information(self, "Внимание", "Эта таблица уже находится на диаграмме.")
+                        return
+
+                    drop_pos = self.mapToScene(event.position().toPoint())
+
+                    # Добавляем существующую таблицу на диаграмму
+                    self.controller.add_existing_table_to_diagram(
+                        self.current_diagram.diagram_id,
+                        table_id,
+                        int(drop_pos.x()),
+                        int(drop_pos.y())
+                    )
+                    # Обновляем вид, чтобы показать новую таблицу
+                    self.main_window.load_current_diagram_view()
+                    event.acceptProposedAction()
+
+                except (ValueError, IndexError):
+                    event.ignore()
+            else:
+                event.ignore()
+        else:
+            event.ignore()
     def clear_diagram(self):
         items_to_remove = [item for item in self.scene.items() if isinstance(item, (TableItem, ConnectionLine))]
         for item in items_to_remove:
@@ -445,6 +492,30 @@ class DiagramView(QGraphicsView):
             self.scene.addItem(item)
             self.table_items[d_obj.table.table_id] = item
             item.update_layout()
+            self.project_structure_changed.emit()
+
+    def export_as_image(self, file_path: str) -> bool:
+        """Рендерит сцену в QImage и сохраняет ее в файл."""
+        try:
+            # Определяем область, занимаемую всеми элементами на сцене
+            rect = self.scene.itemsBoundingRect()
+
+            # Создаем изображение нужного размера
+            image = QImage(rect.size().toSize(), QImage.Format_ARGB32)
+            image.fill(Qt.transparent)  # Прозрачный фон
+
+            # Создаем QPainter для рисования на нашем изображении
+            painter = QPainter(image)
+
+            # Рендерим сцену в QPainter
+            self.scene.render(painter, QRectF(image.rect()), rect)
+            painter.end()
+
+            # Сохраняем изображение в файл
+            return image.save(file_path)
+        except Exception as e:
+            print(f"Ошибка при экспорте изображения: {e}")
+            return False
 
     def delete_selected_tables(self):
         items = [it for it in self.scene.selectedItems() if isinstance(it, TableItem)]
