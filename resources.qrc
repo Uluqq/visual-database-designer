@@ -1,7 +1,8 @@
 <!DOCTYPE RCC>
 <RCC version="1.0">
-<qresource prefix="/icons">
-    <file alias="save-icon.png">ui/icons/save_icon.png</file>
-    <file alias="exit-icon.png">ui/icons/exit_icon.png</file>
-</qresource>
+    <qresource prefix="icons">
+        <file>ui/icons/close.png</file>
+        <file>ui/icons/remove.png</file>
+        <file>ui/icons/add.png</file>
+    </qresource>
 </RCC>

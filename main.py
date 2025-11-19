@@ -9,6 +9,7 @@ from views.project_selection_dialog import ProjectSelectionDialog
 from models.base import init_db
 from models.user import User
 from models.project import Project
+import resources_rc  # <--- ВАЖНО! Импорт ресурсов
 
 CYBERPUNK_STYLESHEET = """
 QWidget {
@@ -17,49 +18,48 @@ QWidget {
     color: #d9e0ee;
 }
 
-/* --- ИСПРАВЛЕНИЕ COMBOBOX --- */
+/* --- ОБЫЧНЫЙ COMBOBOX (В формах) --- */
 QComboBox {
     background-color: rgba(30, 30, 46, 0.8);
     border: 1px solid rgba(137, 180, 250, 0.3);
     border-radius: 5px;
     padding: 5px 10px;
-    /* Отступ справа, чтобы текст не лез на стрелку */
     padding-right: 30px; 
     color: #ffffff;
     min-height: 25px;
 }
 
-QComboBox:focus {
-    border: 1px solid #89b4fa;
-    background-color: rgba(40, 40, 60, 0.9);
+/* --- КОМПАКТНЫЙ COMBOBOX ВНУТРИ ТАБЛИЦЫ --- */
+/* Делаем его максимально плоским и заполняющим */
+QTableWidget QComboBox {
+    margin: 0px;
+    padding: 0px 0px 0px 5px; /* Отступ только слева для текста */
+    min-height: 0px;
+    border-radius: 0px;
+    background-color: transparent; 
+    border: none; 
 }
 
-QComboBox::drop-down {
+QTableWidget QComboBox:hover {
+    background-color: rgba(137, 180, 250, 0.1);
+}
+
+/* Стрелка ComboBox внутри таблицы */
+QTableWidget QComboBox::drop-down {
     subcontrol-origin: padding;
-    subcontrol-position: top right;
-    width: 25px;
-    border-left-width: 1px;
-    border-left-color: rgba(137, 180, 250, 0.3);
-    border-left-style: solid;
-    border-top-right-radius: 5px;
-    border-bottom-right-radius: 5px;
-}
-
-/* Стрелочка вниз */
-QComboBox::down-arrow {
-    image: none; /* Убираем стандартную картинку */
+    subcontrol-position: center right;
+    width: 20px;
     border: none;
-    /* Рисуем треугольник через CSS границы (хак) или можно использовать unicode */
-    width: 0; 
-    height: 0; 
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    border-top: 7px solid #89b4fa;
-    margin-top: 2px;
-    margin-right: 2px;
 }
 
-/* --- ОСТАЛЬНОЕ --- */
+QTableWidget QComboBox::down-arrow {
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #89b4fa;
+}
+
+/* --- ОСТАЛЬНЫЕ СТИЛИ --- */
 QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox {
     background-color: rgba(30, 30, 46, 0.8);
     border: 1px solid rgba(137, 180, 250, 0.3);
@@ -70,10 +70,7 @@ QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox {
     selection-color: #1e1e2e;
     min-height: 30px;
 }
-
-QLineEdit:focus {
-    border: 1px solid #89b4fa;
-}
+QLineEdit:focus { border: 1px solid #89b4fa; }
 
 QPushButton {
     background-color: rgba(137, 180, 250, 0.1);
@@ -84,26 +81,15 @@ QPushButton {
     font-weight: bold;
     min-height: 35px;
 }
-
-QPushButton:hover {
-    background-color: rgba(137, 180, 250, 0.2);
-    border: 1px solid #89b4fa;
-    color: #ffffff;
-}
-
-QPushButton:pressed {
-    background-color: rgba(137, 180, 250, 0.4);
-}
+QPushButton:hover { background-color: rgba(137, 180, 250, 0.2); border: 1px solid #89b4fa; color: #ffffff; }
+QPushButton:pressed { background-color: rgba(137, 180, 250, 0.4); }
 
 QPushButton[role="primary"] {
     background-color: rgba(245, 194, 231, 0.1); 
     border: 1px solid #f5c2e7;
     color: #f5c2e7;
 }
-QPushButton[role="primary"]:hover {
-    background-color: rgba(245, 194, 231, 0.3);
-    color: #ffffff;
-}
+QPushButton[role="primary"]:hover { background-color: rgba(245, 194, 231, 0.3); color: #ffffff; }
 
 QListWidget, QTableWidget, QTreeWidget {
     background-color: rgba(24, 24, 37, 0.6);
@@ -111,20 +97,16 @@ QListWidget, QTableWidget, QTreeWidget {
     border-radius: 8px;
     outline: none;
 }
-
 QListWidget::item, QTableWidget::item {
     padding: 5px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
-
-/* Исправление "размазанного" текста при выделении */
 QListWidget::item:selected, QTableWidget::item:selected {
-    background-color: rgba(137, 180, 250, 0.3); /* Чуть более непрозрачный */
+    background-color: rgba(137, 180, 250, 0.3);
     border: 1px solid rgba(137, 180, 250, 0.5);
     border-radius: 4px;
     color: white;
 }
-
 QHeaderView::section {
     background-color: #11111b;
     color: #bac2de;
@@ -133,7 +115,6 @@ QHeaderView::section {
     border-bottom: 2px solid #89b4fa;
     font-weight: bold;
 }
-
 QTabWidget::pane {
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 5px;
@@ -145,13 +126,8 @@ QTabBar::tab {
     padding: 10px 15px;
     border-bottom: 2px solid transparent;
 }
-QTabBar::tab:selected {
-    color: #f5c2e7;
-    border-bottom: 2px solid #f5c2e7;
-}
-QTabBar::tab:hover {
-    background-color: rgba(255, 255, 255, 0.05);
-}
+QTabBar::tab:selected { color: #f5c2e7; border-bottom: 2px solid #f5c2e7; }
+QTabBar::tab:hover { background-color: rgba(255, 255, 255, 0.05); }
 
 QMenuBar { background-color: #181825; border-bottom: 1px solid #313244; color: #cdd6f4; }
 QMenuBar::item:selected { background-color: rgba(137, 180, 250, 0.2); }
@@ -200,7 +176,6 @@ class ApplicationController:
 
 
 if __name__ == "__main__":
-    # init_db() # Раскомментируйте при первом запуске
     app = QApplication(sys.argv)
     app.setStyleSheet(CYBERPUNK_STYLESHEET)
 

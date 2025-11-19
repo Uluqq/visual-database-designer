@@ -3,7 +3,7 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QStatusBar,
     QPushButton, QComboBox, QListWidget, QListWidgetItem, QLabel,
-    QInputDialog, QMessageBox, QFileDialog, QFrame
+    QInputDialog, QMessageBox, QFileDialog, QFrame, QMenuBar
 )
 from PySide6.QtCore import Qt, Signal, QSize, QMimeData
 from PySide6.QtGui import QIcon, QAction, QDrag
@@ -14,6 +14,7 @@ from controllers.diagram_controller import DiagramController
 from controllers.project_controller import ProjectController
 from utils.exporters import MySqlExporter
 from .custom_title_bar import CustomTitleBar
+import resources_rc  # Важно для иконки add.png
 
 
 class DraggableTableListWidget(QListWidget):
@@ -46,14 +47,15 @@ class MainWindow(QMainWindow):
         self.project_controller = ProjectController()
         self.current_diagram = None
 
+        # Главный виджет
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
 
-        # Рамка вокруг окна
         layout = QVBoxLayout(main_widget)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        # --- КОРНЕВОЙ ФРЕЙМ ---
         self.root_frame = QFrame()
         self.root_frame.setStyleSheet("QFrame#RootFrame { background-color: #1e1e2e; border: 1px solid #313244; }")
         self.root_frame.setObjectName("RootFrame")
@@ -63,23 +65,52 @@ class MainWindow(QMainWindow):
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
 
-        # Заголовок
+        # 1. ЗАГОЛОВОК (TITLE BAR)
         title_text = f"Visual Database Designer - [{project.project_name}]"
         self.title_bar = CustomTitleBar(self, title_text, is_main_window=True)
         root_layout.addWidget(self.title_bar)
 
-        # Тулбар
+        # 2. МЕНЮ (MENU BAR) - Теперь это часть лейаута под заголовком
+        self.menu_bar = QMenuBar()
+        # Убираем границы, чтобы вписывалось бесшовно
+        self.menu_bar.setStyleSheet("""
+            QMenuBar { background-color: #1e1e2e; border: none; border-bottom: 1px solid #313244; }
+            QMenuBar::item { background: transparent; color: #bac2de; padding: 5px 10px; }
+            QMenuBar::item:selected { background-color: rgba(137, 180, 250, 0.1); color: #ffffff; }
+            QMenu { background-color: #1e1e2e; border: 1px solid #313244; }
+        """)
+        root_layout.addWidget(self.menu_bar)
+        self._setup_menu_actions()  # Заполняем меню
+
+        # 3. ТУЛБАР (TOOLBAR)
         toolbar_container = QWidget()
+        # Убрал верхнюю границу, так как у меню она есть снизу
         toolbar_container.setStyleSheet("background-color: #181825; border-bottom: 1px solid #313244;")
         toolbar_layout = QHBoxLayout(toolbar_container)
-        toolbar_layout.setContentsMargins(10, 5, 10, 5)
+        toolbar_layout.setContentsMargins(15, 5, 15, 5)
 
         self.diagram_combo = QComboBox()
         self.diagram_combo.setMinimumWidth(250)
 
-        add_diagram_button = QPushButton("+")
-        add_diagram_button.setFixedSize(QSize(32, 32))
-        add_diagram_button.setProperty("role", "primary")
+        # --- КНОПКА ДОБАВЛЕНИЯ (С ИКОНКОЙ) ---
+        add_diagram_button = QPushButton()
+        add_diagram_button.setIcon(QIcon(":/icons/ui/icons/add.png"))
+        add_diagram_button.setIconSize(QSize(20, 20))  # Размер иконки
+        add_diagram_button.setFixedSize(QSize(36, 36))  # Размер кнопки
+        add_diagram_button.setToolTip("Создать новую диаграмму")
+        add_diagram_button.setCursor(Qt.PointingHandCursor)
+        # Делаем кнопку чуть более прозрачной/стильной для иконки
+        add_diagram_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(137, 180, 250, 0.1);
+                border: 1px solid rgba(137, 180, 250, 0.3);
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: rgba(137, 180, 250, 0.25);
+                border: 1px solid #89b4fa;
+            }
+        """)
 
         toolbar_layout.addWidget(QLabel(" ДИАГРАММА: "))
         toolbar_layout.addWidget(self.diagram_combo)
@@ -88,9 +119,11 @@ class MainWindow(QMainWindow):
 
         root_layout.addWidget(toolbar_container)
 
+        # 4. РАБОЧАЯ ОБЛАСТЬ
         workspace_layout = QHBoxLayout()
         workspace_layout.setSpacing(0)
 
+        # Сайдбар
         sidebar_widget = QWidget()
         sidebar_widget.setStyleSheet("background-color: #1e1e2e; border-right: 1px solid #313244;")
         sidebar_widget.setFixedWidth(240)
@@ -104,13 +137,14 @@ class MainWindow(QMainWindow):
         self.tables_list_widget = DraggableTableListWidget()
         sidebar_layout.addWidget(self.tables_list_widget)
 
+        # Диаграмма
         view_container = QWidget()
         view_container.setStyleSheet("border: none;")
         self.diagram_view = DiagramView(view_container)
         self.diagram_view.set_controller(self.diagram_controller)
         self.diagram_view.set_main_window(self)
 
-        # КНОПКИ (Увеличена ширина до 130)
+        # Кнопки (Сохранить/Выход)
         self.save_button = QPushButton("СОХРАНИТЬ", view_container)
         self.save_button.setProperty("role", "primary")
         self.save_button.setFixedSize(QSize(130, 40))
@@ -125,14 +159,14 @@ class MainWindow(QMainWindow):
 
         root_layout.addLayout(workspace_layout)
 
+        # Подключение сигналов
         self.diagram_combo.currentIndexChanged.connect(self.handle_diagram_switch)
         add_diagram_button.clicked.connect(self.handle_create_new_diagram)
         self.save_button.clicked.connect(self.diagram_view.save_project_state)
         self.exit_button.clicked.connect(self.diagram_view.exit_to_project_selection)
         self.diagram_view.project_structure_changed.connect(self.update_project_tables_list)
 
-        self._create_menu_bar()
-
+        # Статус бар
         status = QStatusBar(self)
         status.setStyleSheet("background-color: #11111b; color: #bac2de; border-top: 1px solid #313244;")
         self.setStatusBar(status)
@@ -141,9 +175,9 @@ class MainWindow(QMainWindow):
         self.showMaximized()
         self.load_project_data()
 
-    def _create_menu_bar(self):
-        menu_bar = self.menuBar()
-        file_menu = menu_bar.addMenu("Файл")
+    def _setup_menu_actions(self):
+        # Используем self.menu_bar, который мы создали вручную
+        file_menu = self.menu_bar.addMenu("Файл")
         export_menu = file_menu.addMenu("Экспорт")
 
         export_sql_action = QAction("Экспорт в SQL...", self)
@@ -195,7 +229,6 @@ class MainWindow(QMainWindow):
         view_container = self.diagram_view.parentWidget()
         if view_container:
             self.diagram_view.setGeometry(0, 0, view_container.width(), view_container.height())
-        # Позиционируем плавающие кнопки
         self.save_button.move(view_container.width() - 150, 20)
         self.exit_button.move(view_container.width() - 150, 70)
 
