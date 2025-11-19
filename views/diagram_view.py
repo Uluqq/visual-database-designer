@@ -4,29 +4,48 @@ from PySide6.QtWidgets import (
     QGraphicsView, QGraphicsScene, QGraphicsRectItem,
     QGraphicsTextItem, QMenu, QGraphicsPathItem,
     QGraphicsEllipseItem, QMessageBox, QInputDialog, QGraphicsItem, QDialog,
-    QMainWindow, QColorDialog
+    QMainWindow, QColorDialog, QGraphicsDropShadowEffect
 )
 from PySide6.QtCore import Qt, QRectF, QPointF, QSettings, Signal
-from PySide6.QtGui import QBrush, QColor, QPen, QPainter, QPainterPath, QFontMetrics, QImage
+from PySide6.QtGui import (QBrush, QColor, QPen, QPainter, QPainterPath,
+                           QFontMetrics, QImage, QLinearGradient, QFont)
 from .table_editor_dialog import TableEditorDialog
 from controllers.table_controller import TableController
 from typing import Dict
 
+# --- ЦВЕТОВАЯ ПАЛИТРА ---
+COLOR_BG_DARK = QColor(20, 20, 25)  # Очень темный фон сцены
+COLOR_GRID_LINE = QColor(255, 255, 255, 15)  # Еле заметная сетка
+COLOR_NODE_BODY = QColor(30, 32, 40, 210)  # Полупрозрачное тело таблицы
+COLOR_ACCENT_CYAN = QColor(137, 180, 250)  # Neon Cyan
+COLOR_ACCENT_PINK = QColor(245, 194, 231)  # Neon Pink
+COLOR_TEXT_MAIN = QColor(255, 255, 255)
+COLOR_TEXT_DIM = QColor(180, 180, 200)
+
 
 class PortItem(QGraphicsEllipseItem):
     def __init__(self, parent_column, side='left'):
-        super().__init__(-4, -4, 8, 8, parent_column)
+        super().__init__(-5, -5, 10, 10, parent_column)
         self.column = parent_column
         self.side = side
-        self.default_brush = QBrush(QColor(100, 180, 255))
-        self.hover_brush = QBrush(QColor(120, 200, 255))
-        self.highlight_brush = QBrush(QColor(0, 180, 255))
-        self.setBrush(self.default_brush)
+
+        # Неоновые цвета портов
+        self.default_color = COLOR_ACCENT_CYAN
+        self.highlight_color = COLOR_ACCENT_PINK
+
+        self.setBrush(QBrush(self.default_color))
         self.setPen(QPen(Qt.NoPen))
         self.setZValue(10)
         self.setAcceptHoverEvents(True)
         self.setVisible(False)
         self.update_position()
+
+        # Свечение порта
+        glow = QGraphicsDropShadowEffect()
+        glow.setBlurRadius(10)
+        glow.setColor(self.default_color)
+        glow.setOffset(0, 0)
+        self.setGraphicsEffect(glow)
 
     def update_position(self):
         r = self.column.rect()
@@ -37,22 +56,27 @@ class PortItem(QGraphicsEllipseItem):
             self.setPos(r.right(), y_center)
 
     def hoverEnterEvent(self, event):
-        self.setBrush(self.hover_brush);
-        self.setRect(-5, -5, 10, 10);
+        self.setBrush(QBrush(self.highlight_color))
+        self.graphicsEffect().setColor(self.highlight_color)
+        self.setRect(-6, -6, 12, 12)
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event):
-        self.setBrush(self.default_brush);
-        self.setRect(-4, -4, 8, 8);
+        if not self.column.is_highlighted:  # Если не активен, возвращаем цвет
+            self.setBrush(QBrush(self.default_color))
+            self.graphicsEffect().setColor(self.default_color)
+        self.setRect(-5, -5, 10, 10)
         super().hoverLeaveEvent(event)
 
     def set_highlighted(self, highlighted: bool):
         if highlighted:
-            self.setBrush(self.highlight_brush);
-            self.setRect(-6, -6, 12, 12)
+            self.setBrush(QBrush(self.highlight_color))
+            self.graphicsEffect().setColor(self.highlight_color)
+            self.setRect(-7, -7, 14, 14)
         else:
-            self.setBrush(self.default_brush);
-            self.setRect(-4, -4, 8, 8)
+            self.setBrush(QBrush(self.default_color))
+            self.graphicsEffect().setColor(self.default_color)
+            self.setRect(-5, -5, 10, 10)
 
 
 class ColumnItem(QGraphicsRectItem):
@@ -68,31 +92,50 @@ class ColumnItem(QGraphicsRectItem):
         self.is_pk = column_info.get('pk', False) if column_info else False
         self.is_fk = False
         self.is_nn = column_info.get('nn', True) if column_info else True
-        self.default_brush = QBrush(QColor(250, 250, 250))
-        self.default_pen = QPen(Qt.black, 1.0)
-        self.setBrush(self.default_brush)
-        self.setPen(self.default_pen)
+        self.is_highlighted = False
+
+        # Прозрачный фон колонки
+        self.setBrush(Qt.NoBrush)
+        self.setPen(Qt.NoPen)
         self.setZValue(1)
+
         self.name_item = QGraphicsTextItem("", self)
-        self.name_item.setDefaultTextColor(Qt.black)
+        self.name_item.setDefaultTextColor(COLOR_TEXT_MAIN)
         self.name_item.setPos(10, 4)
+        self.name_item.setFont(QFont("Segoe UI", 9))
+
         self.type_item = QGraphicsTextItem("", self)
-        self.type_item.setDefaultTextColor(QColor(80, 80, 80))
+        self.type_item.setDefaultTextColor(COLOR_TEXT_DIM)
         self.type_item.setPos(150, 4)
+        self.type_item.setFont(QFont("Consolas", 9))  # Моноширинный шрифт для типов
+
         self.left_port = PortItem(self, 'left')
         self.right_port = PortItem(self, 'right')
         self._update_and_elide_text()
 
     def _update_and_elide_text(self):
         prefix = ""
-        if self.is_pk: prefix += "🔑 "
-        if self.is_fk: prefix += "🔒 "
-        display_name = f"{prefix}{self.raw_name}"
+        # Цвет иконок
+        pk_color = "#fab387"  # Orange
+        fk_color = "#a6e3a1"  # Green
+
+        # Формируем HTML для раскраски иконок
+        name_html = ""
+        if self.is_pk: name_html += f"<span style='color:{pk_color};'>🔑 </span>"
+        if self.is_fk: name_html += f"<span style='color:{fk_color};'>🔒 </span>"
+
+        name_html += self.raw_name
+
+        # Сначала элайдим текст без HTML тегов
+        font_metrics_name = QFontMetrics(self.name_item.font())
+        elided_name = font_metrics_name.elidedText(self.raw_name, Qt.ElideRight, self.MAX_NAME_WIDTH)
+
+        # Применяем HTML с элайженным именем
+        final_html = name_html.replace(self.raw_name, elided_name)
+        self.name_item.setHtml(final_html)
+
         suffix = "" if self.is_nn else " [null]"
         display_type = f"{self.data_type}{suffix}"
-        font_metrics_name = QFontMetrics(self.name_item.font())
-        elided_name = font_metrics_name.elidedText(display_name, Qt.ElideRight, self.MAX_NAME_WIDTH)
-        self.name_item.setPlainText(elided_name)
         font_metrics_type = QFontMetrics(self.type_item.font())
         elided_type = font_metrics_type.elidedText(display_type, Qt.ElideRight, self.MAX_TYPE_WIDTH)
         self.type_item.setPlainText(elided_type)
@@ -102,12 +145,12 @@ class ColumnItem(QGraphicsRectItem):
         self._update_and_elide_text()
 
     def set_highlighted(self, highlighted: bool):
+        self.is_highlighted = highlighted
         if highlighted:
-            self.setBrush(QBrush(QColor(225, 245, 255)))
-            self.setPen(QPen(QColor(0, 180, 255), 2.0))
+            # Подсветка фона колонки при наведении на связь
+            self.setBrush(QBrush(QColor(137, 180, 250, 50)))
         else:
-            self.setBrush(self.default_brush)
-            self.setPen(self.default_pen)
+            self.setBrush(Qt.NoBrush)
 
 
 class TableItem(QGraphicsRectItem):
@@ -123,17 +166,76 @@ class TableItem(QGraphicsRectItem):
         self.setFlags(
             QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges)
         self.setAcceptHoverEvents(True)
-        self.header_color = QColor(color) if color else QColor(200, 220, 255)
-        self.setBrush(self.header_color)
-        self.setPen(QPen(QColor(80, 80, 120), 1.2))
+
+        # Цвета
+        self.custom_header_color = QColor(color) if color else COLOR_ACCENT_CYAN
+        self.body_color = COLOR_NODE_BODY
+
+        # Эффект свечения (Drop Shadow) для выбранной таблицы
+        self.glow = QGraphicsDropShadowEffect()
+        self.glow.setBlurRadius(20)
+        self.glow.setColor(QColor(0, 0, 0, 0))  # По умолчанию выключен
+        self.glow.setOffset(0, 0)
+        self.setGraphicsEffect(self.glow)
+
+        # Заголовок (Text)
         self.text = QGraphicsTextItem(name, self)
-        self.text.setDefaultTextColor(QColor(30, 30, 30))
+        self.text.setDefaultTextColor(QColor(10, 10, 20))  # Темный текст на ярком заголовке
+        font = QFont("Segoe UI", 10, QFont.Bold)
+        font.setLetterSpacing(QFont.AbsoluteSpacing, 1)
+        self.text.setFont(font)
         self.text.setPos(8, 4)
+
+    def paint(self, painter, option, widget=None):
+        # --- КАСТОМНАЯ ОТРИСОВКА "СТЕКЛА" ---
+        r = self.rect()
+
+        # 1. Тело (Body) - Полупрозрачное темное
+        body_path = QPainterPath()
+        body_path.addRoundedRect(r, 10, 10)
+        painter.setBrush(self.body_color)
+        painter.setPen(Qt.NoPen)
+        painter.drawPath(body_path)
+
+        # 2. Заголовок (Header)
+        header_height = 30
+        header_rect = QRectF(r.x(), r.y(), r.width(), header_height)
+        header_path = QPainterPath()
+        header_path.setFillRule(Qt.WindingFill)
+        header_path.addRoundedRect(header_rect, 10, 10)
+        # Обрезаем нижние углы, чтобы они были прямыми (стык с телом)
+        header_path.addRect(QRectF(r.x(), r.y() + header_height - 5, r.width(), 5))
+
+        # Градиент для заголовка
+        grad = QLinearGradient(header_rect.topLeft(), header_rect.bottomRight())
+        grad.setColorAt(0, self.custom_header_color)
+        grad.setColorAt(1, self.custom_header_color.darker(120))
+
+        painter.setBrush(grad)
+        painter.setPen(Qt.NoPen)
+        painter.drawPath(header_path)  # Рисуем header_path, но он может вылезти снизу.
+        # Упрощенно: рисуем закругленный верх
+        painter.drawRoundedRect(header_rect, 10, 10)
+        # И прямоугольник снизу заголовка, чтобы перекрыть нижние скругления заголовка
+        painter.fillRect(QRectF(r.x(), r.y() + 15, r.width(), 15), grad)
+
+        # 3. Обводка (Border)
+        border_pen = QPen(QColor(255, 255, 255, 30), 1)  # Тонкая белая рамка
+        if self.isSelected():
+            border_pen = QPen(COLOR_ACCENT_PINK, 2)  # Яркая рамка при выборе
+            self.glow.setColor(COLOR_ACCENT_PINK)
+            self.glow.setColor(QColor(245, 194, 231, 150))
+        else:
+            self.glow.setColor(QColor(0, 0, 0, 100))  # Обычная тень
+
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(border_pen)
+        painter.drawRoundedRect(r, 10, 10)
 
     def setColor(self, color: QColor):
         if color.isValid():
-            self.header_color = color
-            self.setBrush(self.header_color)
+            self.custom_header_color = color
+            self.update()
             self.diagram_controller.update_table_color(self.diagram_object_id, color.name())
 
     def mouseDoubleClickEvent(self, event):
@@ -197,11 +299,22 @@ class ConnectionLine(QGraphicsPathItem):
     def __init__(self, start_port, end_port, relationship_id=None):
         super().__init__()
         self.start_port, self.end_port, self.relationship_id = start_port, end_port, relationship_id
-        self.default_pen = QPen(QColor(80, 80, 80), 2)
-        self.highlight_pen = QPen(QColor(0, 180, 255), 3.5)
+
+        # Стиль линий
+        self.default_pen = QPen(QColor(100, 100, 120), 2)
+        self.highlight_pen = QPen(COLOR_ACCENT_CYAN, 3)
+
         self.setPen(self.default_pen)
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.setZValue(-1)
+
+        # Эффект свечения для линий
+        self.glow = QGraphicsDropShadowEffect()
+        self.glow.setBlurRadius(10)
+        self.glow.setColor(COLOR_ACCENT_CYAN)
+        self.glow.setEnabled(False)
+        self.setGraphicsEffect(self.glow)
+
         for port in [start_port, end_port]:
             if not hasattr(port, 'connections'):
                 port.connections = []
@@ -209,6 +322,7 @@ class ConnectionLine(QGraphicsPathItem):
         self.update_position()
 
     def paint(self, painter, option, widget=None):
+        painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(self.pen())
         painter.drawPath(self.path())
 
@@ -234,6 +348,7 @@ class ConnectionLine(QGraphicsPathItem):
 
     def set_highlighted(self, highlighted: bool):
         self.setPen(self.highlight_pen if highlighted else self.default_pen)
+        self.glow.setEnabled(highlighted)
         self.start_port.set_highlighted(highlighted)
         self.start_port.column.set_highlighted(highlighted)
         self.end_port.set_highlighted(highlighted)
@@ -242,13 +357,14 @@ class ConnectionLine(QGraphicsPathItem):
 
 class DiagramView(QGraphicsView):
     project_structure_changed = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.scene = QGraphicsScene()
         self.setScene(self.scene)
-        self.setRenderHints(QPainter.Antialiasing)
-        self.setBackgroundBrush(QBrush(QColor(245, 245, 245)))
-        self.setSceneRect(0, 0, 4000, 3000)
+        self.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
+        self.setBackgroundBrush(QBrush(COLOR_BG_DARK))
+        self.setSceneRect(0, 0, 8000, 6000)
         self.setDragMode(QGraphicsView.RubberBandDrag)
         self.controller = None
         self.current_diagram = None
@@ -259,9 +375,13 @@ class DiagramView(QGraphicsView):
         self.first_port: PortItem = None
         self.default_table_color = self.load_default_color()
 
+        # Убираем скроллбары для полного погружения (опционально)
+        # self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
     def load_default_color(self) -> QColor:
         settings = QSettings("MyCompany", "VisualDBDesigner")
-        color_name = settings.value("default_table_color", QColor(200, 220, 255).name())
+        color_name = settings.value("default_table_color", COLOR_ACCENT_CYAN.name())
         return QColor(color_name)
 
     def save_default_color(self, color: QColor):
@@ -310,7 +430,6 @@ class DiagramView(QGraphicsView):
                 self.first_port = None
 
     def dragEnterEvent(self, event):
-        # Проверяем, что перетаскиваемые данные содержат текст (наш ID таблицы)
         if event.mimeData().hasText():
             event.acceptProposedAction()
         else:
@@ -325,35 +444,28 @@ class DiagramView(QGraphicsView):
     def dropEvent(self, event):
         if event.mimeData().hasText():
             data_str = event.mimeData().text()
-            # Ожидаем данные в формате "table_id:ID"
             if data_str.startswith("table_id:"):
                 try:
                     table_id = int(data_str.split(":")[1])
-
-                    # Проверяем, нет ли уже этой таблицы на диаграмме
                     if table_id in self.table_items:
                         QMessageBox.information(self, "Внимание", "Эта таблица уже находится на диаграмме.")
                         return
-
                     drop_pos = self.mapToScene(event.position().toPoint())
-
-                    # Добавляем существующую таблицу на диаграмму
                     self.controller.add_existing_table_to_diagram(
                         self.current_diagram.diagram_id,
                         table_id,
                         int(drop_pos.x()),
                         int(drop_pos.y())
                     )
-                    # Обновляем вид, чтобы показать новую таблицу
                     self.main_window.load_current_diagram_view()
                     event.acceptProposedAction()
-
                 except (ValueError, IndexError):
                     event.ignore()
             else:
                 event.ignore()
         else:
             event.ignore()
+
     def clear_diagram(self):
         items_to_remove = [item for item in self.scene.items() if isinstance(item, (TableItem, ConnectionLine))]
         for item in items_to_remove:
@@ -452,7 +564,7 @@ class DiagramView(QGraphicsView):
 
             menu.addAction("Изменить цвет...").triggered.connect(lambda: self.change_table_color(table_under_cursor))
             menu.addAction("Сделать цветом по умолчанию").triggered.connect(
-                lambda: self.save_default_color(table_under_cursor.header_color))
+                lambda: self.save_default_color(table_under_cursor.custom_header_color))
             menu.addSeparator()
 
         menu.addAction("Добавить таблицу")
@@ -473,7 +585,7 @@ class DiagramView(QGraphicsView):
 
     def change_table_color(self, table: TableItem):
         if not table: return
-        new_color = QColorDialog.getColor(table.header_color, self)
+        new_color = QColorDialog.getColor(table.custom_header_color, self)
         if new_color.isValid():
             table.setColor(new_color)
 
@@ -488,30 +600,22 @@ class DiagramView(QGraphicsView):
                 color=self.default_table_color.name()
             )
             item.setColor(self.default_table_color)
-
             self.scene.addItem(item)
             self.table_items[d_obj.table.table_id] = item
             item.update_layout()
             self.project_structure_changed.emit()
 
     def export_as_image(self, file_path: str) -> bool:
-        """Рендерит сцену в QImage и сохраняет ее в файл."""
         try:
-            # Определяем область, занимаемую всеми элементами на сцене
             rect = self.scene.itemsBoundingRect()
-
-            # Создаем изображение нужного размера
+            rect.adjust(-50, -50, 50, 50)  # Добавляем поля
             image = QImage(rect.size().toSize(), QImage.Format_ARGB32)
-            image.fill(Qt.transparent)  # Прозрачный фон
+            image.fill(COLOR_BG_DARK)  # Заливаем темным фоном, чтобы было видно на белом
 
-            # Создаем QPainter для рисования на нашем изображении
             painter = QPainter(image)
-
-            # Рендерим сцену в QPainter
+            painter.setRenderHint(QPainter.Antialiasing)
             self.scene.render(painter, QRectF(image.rect()), rect)
             painter.end()
-
-            # Сохраняем изображение в файл
             return image.save(file_path)
         except Exception as e:
             print(f"Ошибка при экспорте изображения: {e}")
@@ -538,15 +642,35 @@ class DiagramView(QGraphicsView):
                     end_column.is_fk = is_still_fk
                     end_column._update_and_elide_text()
 
+    # --- ИЗМЕНЕНО: РИСОВАНИЕ СЕТКИ ---
     def drawBackground(self, painter, rect):
-        super().drawBackground(painter, rect)
-        painter.setPen(QColor(220, 220, 220))
-        step = 25
-        left, top = int(rect.left()), int(rect.top())
-        for x in range(left - (left % step), int(rect.right()), step):
-            painter.drawLine(x, rect.top(), x, rect.bottom())
-        for y in range(top - (top % step), int(rect.bottom()), step):
-            painter.drawLine(rect.left(), y, rect.right(), y)
+        # Заливка фона
+        painter.fillRect(rect, COLOR_BG_DARK)
+
+        # Настройка сетки
+        grid_size = 50
+        left = int(rect.left()) - (int(rect.left()) % grid_size)
+        top = int(rect.top()) - (int(rect.top()) % grid_size)
+
+        # Рисуем очень тонкие линии
+        pen = QPen(COLOR_GRID_LINE, 1)
+        pen.setCosmetic(True)  # Чтобы ширина не менялась при зуме
+        painter.setPen(pen)
+
+        lines = []
+        x = left
+        while x < rect.right():
+            lines.append(QPointF(x, rect.top()))
+            lines.append(QPointF(x, rect.bottom()))
+            x += grid_size
+
+        y = top
+        while y < rect.bottom():
+            lines.append(QPointF(rect.left(), y))
+            lines.append(QPointF(rect.right(), y))
+            y += grid_size
+
+        painter.drawLines(lines)
 
     def wheelEvent(self, event):
         if event.modifiers() & Qt.ControlModifier:

@@ -2,22 +2,166 @@
 
 import sys
 from PySide6.QtWidgets import QApplication, QDialog
-# --- VVV --- ДОБАВЛЯЕМ НОВЫЕ ИМПОРТЫ --- VVV ---
 from PySide6.QtCore import QTranslator, QLibraryInfo
-# --- ^^^ --- КОНЕЦ ИЗМЕНЕНИЙ --- ^^^ ---
 from views.main_window import MainWindow
 from views.auth_dialog import AuthDialog
 from views.project_selection_dialog import ProjectSelectionDialog
 from models.base import init_db
 from models.user import User
 from models.project import Project
-import resources_rc
+
+CYBERPUNK_STYLESHEET = """
+QWidget {
+    font-family: 'Segoe UI', 'Roboto', sans-serif;
+    font-size: 14px;
+    color: #d9e0ee;
+}
+
+/* --- ИСПРАВЛЕНИЕ COMBOBOX --- */
+QComboBox {
+    background-color: rgba(30, 30, 46, 0.8);
+    border: 1px solid rgba(137, 180, 250, 0.3);
+    border-radius: 5px;
+    padding: 5px 10px;
+    /* Отступ справа, чтобы текст не лез на стрелку */
+    padding-right: 30px; 
+    color: #ffffff;
+    min-height: 25px;
+}
+
+QComboBox:focus {
+    border: 1px solid #89b4fa;
+    background-color: rgba(40, 40, 60, 0.9);
+}
+
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 25px;
+    border-left-width: 1px;
+    border-left-color: rgba(137, 180, 250, 0.3);
+    border-left-style: solid;
+    border-top-right-radius: 5px;
+    border-bottom-right-radius: 5px;
+}
+
+/* Стрелочка вниз */
+QComboBox::down-arrow {
+    image: none; /* Убираем стандартную картинку */
+    border: none;
+    /* Рисуем треугольник через CSS границы (хак) или можно использовать unicode */
+    width: 0; 
+    height: 0; 
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 7px solid #89b4fa;
+    margin-top: 2px;
+    margin-right: 2px;
+}
+
+/* --- ОСТАЛЬНОЕ --- */
+QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox {
+    background-color: rgba(30, 30, 46, 0.8);
+    border: 1px solid rgba(137, 180, 250, 0.3);
+    border-radius: 5px;
+    padding: 5px 10px;
+    color: #ffffff;
+    selection-background-color: #f5c2e7;
+    selection-color: #1e1e2e;
+    min-height: 30px;
+}
+
+QLineEdit:focus {
+    border: 1px solid #89b4fa;
+}
+
+QPushButton {
+    background-color: rgba(137, 180, 250, 0.1);
+    border: 1px solid rgba(137, 180, 250, 0.5);
+    border-radius: 6px;
+    padding: 0px 15px;
+    color: #89b4fa;
+    font-weight: bold;
+    min-height: 35px;
+}
+
+QPushButton:hover {
+    background-color: rgba(137, 180, 250, 0.2);
+    border: 1px solid #89b4fa;
+    color: #ffffff;
+}
+
+QPushButton:pressed {
+    background-color: rgba(137, 180, 250, 0.4);
+}
+
+QPushButton[role="primary"] {
+    background-color: rgba(245, 194, 231, 0.1); 
+    border: 1px solid #f5c2e7;
+    color: #f5c2e7;
+}
+QPushButton[role="primary"]:hover {
+    background-color: rgba(245, 194, 231, 0.3);
+    color: #ffffff;
+}
+
+QListWidget, QTableWidget, QTreeWidget {
+    background-color: rgba(24, 24, 37, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    outline: none;
+}
+
+QListWidget::item, QTableWidget::item {
+    padding: 5px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Исправление "размазанного" текста при выделении */
+QListWidget::item:selected, QTableWidget::item:selected {
+    background-color: rgba(137, 180, 250, 0.3); /* Чуть более непрозрачный */
+    border: 1px solid rgba(137, 180, 250, 0.5);
+    border-radius: 4px;
+    color: white;
+}
+
+QHeaderView::section {
+    background-color: #11111b;
+    color: #bac2de;
+    padding: 6px;
+    border: none;
+    border-bottom: 2px solid #89b4fa;
+    font-weight: bold;
+}
+
+QTabWidget::pane {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 5px;
+    background-color: rgba(30, 30, 46, 0.5);
+}
+QTabBar::tab {
+    background: transparent;
+    color: #a6adc8;
+    padding: 10px 15px;
+    border-bottom: 2px solid transparent;
+}
+QTabBar::tab:selected {
+    color: #f5c2e7;
+    border-bottom: 2px solid #f5c2e7;
+}
+QTabBar::tab:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+QMenuBar { background-color: #181825; border-bottom: 1px solid #313244; color: #cdd6f4; }
+QMenuBar::item:selected { background-color: rgba(137, 180, 250, 0.2); }
+QMenu { background-color: #1e1e2e; border: 1px solid #313244; color: #cdd6f4; }
+QMenu::item { padding: 5px 20px; }
+QMenu::item:selected { background-color: rgba(137, 180, 250, 0.2); }
+"""
 
 
 class ApplicationController:
-    """
-    Класс для управления жизненным циклом окон приложения.
-    """
     def __init__(self):
         self.auth_dialog = None
         self.project_dialog = None
@@ -25,12 +169,10 @@ class ApplicationController:
         self.current_user = None
 
     def run(self):
-        """Запускает основной цикл приложения."""
         self.show_auth_dialog()
         return app.exec()
 
     def show_auth_dialog(self):
-        """Показывает диалог аутентификации."""
         self.auth_dialog = AuthDialog()
         if self.auth_dialog.exec() == QDialog.Accepted:
             self.current_user = self.auth_dialog.current_user
@@ -39,7 +181,6 @@ class ApplicationController:
             sys.exit(0)
 
     def show_project_dialog(self):
-        """Показывает диалог выбора проекта."""
         self.project_dialog = ProjectSelectionDialog(user=self.current_user)
         if self.project_dialog.exec() == QDialog.Accepted:
             selected_project = self.project_dialog.selected_project
@@ -48,36 +189,25 @@ class ApplicationController:
             sys.exit(0)
 
     def show_main_window(self, project: Project):
-        """Показывает главное окно с диаграммой."""
         self.main_window = MainWindow(user=self.current_user, project=project)
         self.main_window.project_selection_requested.connect(self.handle_exit_to_project_selection)
         self.main_window.show()
 
     def handle_exit_to_project_selection(self):
-        """Обрабатывает выход из главного окна к выбору проекта."""
         if self.main_window:
             self.main_window.close()
         self.show_project_dialog()
 
 
 if __name__ == "__main__":
-    print("Инициализация базы данных...")
-    init_db()
-    print("База данных готова.")
-
+    # init_db() # Раскомментируйте при первом запуске
     app = QApplication(sys.argv)
+    app.setStyleSheet(CYBERPUNK_STYLESHEET)
 
-    # --- VVV --- НОВЫЙ КОД ДЛЯ ЛОКАЛИЗАЦИИ --- VVV ---
-    # Загружаем стандартные переводы Qt для диалогов (QColorDialog, QMessageBox и др.)
     translator = QTranslator()
-    # Находим путь к встроенным в PySide6 файлам перевода
     translations_path = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
     if translator.load("qtbase_ru", translations_path):
         app.installTranslator(translator)
-        print("Русский перевод для стандартных диалогов Qt успешно загружен.")
-    else:
-        print("ПРЕДУПРЕЖДЕНИЕ: Файл перевода qtbase_ru.qm не найден. Диалоги могут быть на английском.")
-    # --- ^^^ --- КОНЕЦ НОВОГО КОДА --- ^^^ ---
 
     controller = ApplicationController()
     sys.exit(controller.run())
