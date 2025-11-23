@@ -3,27 +3,26 @@
 from PySide6.QtWidgets import (QDialog, QWidget, QVBoxLayout, QHBoxLayout,
                                QPushButton, QListWidget, QLabel, QInputDialog,
                                QMessageBox, QListWidgetItem, QFrame)
-# --- ДОБАВЛЕН QSize В ИМПОРТЫ ---
 from PySide6.QtCore import Qt, Signal, QSize
 from controllers.project_controller import ProjectController
 from models.user import User
 from .connection_manager_dialog import ConnectionManagerDialog
 from utils.schema_inspector import list_databases_on_server
 from .custom_title_bar import CustomTitleBar
+# --- ИМПОРТ НОВОГО ДИАЛОГА ---
+from .database_selection_dialog import DatabaseSelectionDialog
 
 
 class ProjectListItemWidget(QWidget):
     def __init__(self, project_name, updated_date_str, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 12, 15, 12)  # Больше отступа внутри
+        layout.setContentsMargins(15, 12, 15, 12)
         layout.setSpacing(4)
 
-        # Явно задаем фон, чтобы текст не "плыл" на прозрачности
         self.setStyleSheet("background-color: transparent;")
 
         self.name_label = QLabel(f"<b>{project_name}</b>")
-        # Цвет текста - белый
         self.name_label.setStyleSheet("font-size: 16px; color: #ffffff; background: transparent;")
 
         self.date_label = QLabel(f"Обновлен: {updated_date_str}")
@@ -92,7 +91,6 @@ class ProjectSelectionDialog(QDialog):
         content_layout.addWidget(list_label)
 
         self.projects_list_widget = QListWidget()
-        # Исправляем стиль списка, чтобы он был контрастным
         self.projects_list_widget.setStyleSheet("""
             QListWidget {
                 border: none; 
@@ -127,7 +125,6 @@ class ProjectSelectionDialog(QDialog):
             updated_str = proj.updated_at.strftime('%Y-%m-%d %H:%M') if proj.updated_at else "N/A"
             item = QListWidgetItem(self.projects_list_widget)
             item_widget = ProjectListItemWidget(proj.project_name, updated_str)
-            # ВАЖНО: Задаем размер явно + небольшой запас
             sz = item_widget.sizeHint()
             item.setSizeHint(QSize(sz.width(), sz.height() + 10))
 
@@ -146,8 +143,10 @@ class ProjectSelectionDialog(QDialog):
     def handle_import_project(self):
         manager_dialog = ConnectionManagerDialog(self.current_user, self)
         if manager_dialog.exec() != QDialog.Accepted: return
+
         connection = manager_dialog.selected_connection
         if not connection: return
+
         databases, error = list_databases_on_server(connection)
         if error:
             QMessageBox.critical(self, "Ошибка", f"Не удалось получить список БД:\n{error}")
@@ -155,17 +154,21 @@ class ProjectSelectionDialog(QDialog):
         if not databases:
             QMessageBox.warning(self, "Внимание", "На сервере нет доступных БД.")
             return
-        db_name, ok = QInputDialog.getItem(self, "Выбор БД", "Выберите базу для импорта:", databases, 0, False)
-        if ok and db_name:
-            QMessageBox.information(self, "Импорт", f"Начинаем импорт схемы '{db_name}'...")
-            project, message = self.project_controller.import_project_from_db(
-                self.current_user.user_id, connection, db_name
-            )
-            if project:
-                QMessageBox.information(self, "Успех", message)
-                self.load_projects()
-            else:
-                QMessageBox.critical(self, "Ошибка импорта", message)
+
+        # --- ИСПОЛЬЗУЕМ НОВЫЙ ДИАЛОГ ВМЕСТО QInputDialog ---
+        db_selection_dialog = DatabaseSelectionDialog(databases, self)
+        if db_selection_dialog.exec() == QDialog.Accepted:
+            db_name = db_selection_dialog.get_selected_db()
+            if db_name:
+                QMessageBox.information(self, "Импорт", f"Начинаем импорт схемы '{db_name}'...")
+                project, message = self.project_controller.import_project_from_db(
+                    self.current_user.user_id, connection, db_name
+                )
+                if project:
+                    QMessageBox.information(self, "Успех", message)
+                    self.load_projects()
+                else:
+                    QMessageBox.critical(self, "Ошибка импорта", message)
 
     def handle_open_project(self, item: QListWidgetItem):
         project = item.data(Qt.UserRole)

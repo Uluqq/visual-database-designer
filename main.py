@@ -9,16 +9,28 @@ from views.project_selection_dialog import ProjectSelectionDialog
 from models.base import init_db
 from models.user import User
 from models.project import Project
-import resources_rc  # <--- ВАЖНО! Импорт ресурсов
+import resources_rc
 
 CYBERPUNK_STYLESHEET = """
+/* --- ГЛОБАЛЬНЫЕ НАСТРОЙКИ ШРИФТА И ЦВЕТА ТЕКСТА --- */
 QWidget {
     font-family: 'Segoe UI', 'Roboto', sans-serif;
     font-size: 14px;
     color: #d9e0ee;
+    /* ВАЖНО: Не задаем здесь background-color, иначе он перекроет все! */
 }
 
-/* --- ОБЫЧНЫЙ COMBOBOX (В формах) --- */
+/* Фон задается только корневым элементам через ID в коде Python */
+QFrame#RootFrame {
+    background-color: #1e1e2e;
+}
+
+/* Лейблы должны быть прозрачными, чтобы видеть фон фрейма */
+QLabel {
+    background-color: transparent;
+}
+
+/* --- COMBOBOX --- */
 QComboBox {
     background-color: rgba(30, 30, 46, 0.8);
     border: 1px solid rgba(137, 180, 250, 0.3);
@@ -29,29 +41,24 @@ QComboBox {
     min-height: 25px;
 }
 
-/* --- КОМПАКТНЫЙ COMBOBOX ВНУТРИ ТАБЛИЦЫ --- */
-/* Делаем его максимально плоским и заполняющим */
+/* Компактный ComboBox внутри таблицы */
 QTableWidget QComboBox {
     margin: 0px;
-    padding: 0px 0px 0px 5px; /* Отступ только слева для текста */
+    padding: 0px 0px 0px 5px;
     min-height: 0px;
     border-radius: 0px;
     background-color: transparent; 
     border: none; 
 }
-
 QTableWidget QComboBox:hover {
     background-color: rgba(137, 180, 250, 0.1);
 }
-
-/* Стрелка ComboBox внутри таблицы */
 QTableWidget QComboBox::drop-down {
     subcontrol-origin: padding;
     subcontrol-position: center right;
     width: 20px;
     border: none;
 }
-
 QTableWidget QComboBox::down-arrow {
     image: none;
     border-left: 4px solid transparent;
@@ -59,7 +66,7 @@ QTableWidget QComboBox::down-arrow {
     border-top: 5px solid #89b4fa;
 }
 
-/* --- ОСТАЛЬНЫЕ СТИЛИ --- */
+/* --- ПОЛЯ ВВОДА --- */
 QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox {
     background-color: rgba(30, 30, 46, 0.8);
     border: 1px solid rgba(137, 180, 250, 0.3);
@@ -70,8 +77,9 @@ QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox {
     selection-color: #1e1e2e;
     min-height: 30px;
 }
-QLineEdit:focus { border: 1px solid #89b4fa; }
+QLineEdit:focus, QSpinBox:focus { border: 1px solid #89b4fa; }
 
+/* --- КНОПКИ --- */
 QPushButton {
     background-color: rgba(137, 180, 250, 0.1);
     border: 1px solid rgba(137, 180, 250, 0.5);
@@ -91,6 +99,7 @@ QPushButton[role="primary"] {
 }
 QPushButton[role="primary"]:hover { background-color: rgba(245, 194, 231, 0.3); color: #ffffff; }
 
+/* --- СПИСКИ И ТАБЛИЦЫ --- */
 QListWidget, QTableWidget, QTreeWidget {
     background-color: rgba(24, 24, 37, 0.6);
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -115,6 +124,8 @@ QHeaderView::section {
     border-bottom: 2px solid #89b4fa;
     font-weight: bold;
 }
+
+/* --- ВКЛАДКИ --- */
 QTabWidget::pane {
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 5px;
@@ -129,6 +140,7 @@ QTabBar::tab {
 QTabBar::tab:selected { color: #f5c2e7; border-bottom: 2px solid #f5c2e7; }
 QTabBar::tab:hover { background-color: rgba(255, 255, 255, 0.05); }
 
+/* --- МЕНЮ --- */
 QMenuBar { background-color: #181825; border-bottom: 1px solid #313244; color: #cdd6f4; }
 QMenuBar::item:selected { background-color: rgba(137, 180, 250, 0.2); }
 QMenu { background-color: #1e1e2e; border: 1px solid #313244; color: #cdd6f4; }

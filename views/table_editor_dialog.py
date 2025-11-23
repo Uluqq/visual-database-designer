@@ -3,7 +3,7 @@
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QVBoxLayout, QHBoxLayout, QWidget,
     QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView,
-    QPushButton, QComboBox, QCheckBox, QAbstractItemView, QMessageBox, QTextEdit, QFrame
+    QPushButton, QComboBox, QCheckBox, QAbstractItemView, QMessageBox, QTextEdit, QFrame, QLabel, QLineEdit
 )
 from PySide6.QtCore import Qt
 from controllers.table_controller import TableController
@@ -17,18 +17,15 @@ class TableEditorDialog(QDialog):
 
     def __init__(self, table_id, parent=None):
         super().__init__(parent)
-        # Убираем системную рамку и делаем фон прозрачным (рисуем свой через QFrame)
         self.setWindowFlags(Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
 
         self.table_id = table_id
         self.controller = TableController()
 
-        # --- ГЛОБАЛЬНЫЙ ЛЕЙАУТ ---
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(10, 10, 10, 10)  # Отступ для тени (при желании)
+        main_layout.setContentsMargins(10, 10, 10, 10)
 
-        # --- КОРНЕВОЙ ФРЕЙМ (ФОН И ГРАНИЦА) ---
         self.root_frame = QFrame()
         self.root_frame.setStyleSheet("""
             QFrame#RootFrame {
@@ -43,14 +40,24 @@ class TableEditorDialog(QDialog):
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
 
-        # 1. КАСТОМНЫЙ ЗАГОЛОВОК
         self.title_bar = CustomTitleBar(self, "Редактор таблицы")
         root_layout.addWidget(self.title_bar)
 
-        # 2. КОНТЕНТНАЯ ЧАСТЬ
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
         content_layout.setContentsMargins(15, 15, 15, 15)
+        content_layout.setSpacing(10)
+
+        # --- ПОЛЕ ИМЕНИ ТАБЛИЦЫ ---
+        name_layout = QHBoxLayout()
+        name_label = QLabel("Название таблицы:")
+        name_label.setStyleSheet("color: #bac2de; font-weight: bold;")
+        self.table_name_input = QLineEdit()
+        self.table_name_input.setPlaceholderText("Введите имя таблицы")
+        name_layout.addWidget(name_label)
+        name_layout.addWidget(self.table_name_input)
+        content_layout.addLayout(name_layout)
+        # ---------------------------
 
         self.tab_widget = QTabWidget()
         content_layout.addWidget(self.tab_widget)
@@ -63,12 +70,10 @@ class TableEditorDialog(QDialog):
         self.tab_widget.addTab(self.indexes_widget, "Индексы")
         self.tab_widget.addTab(self.notes_widget, "Заметки")
 
-        # Кнопки ОК / Отмена
         button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         button_box.accepted.connect(self.on_accept)
         button_box.rejected.connect(self.reject)
 
-        # Стилизуем кнопку OK как Primary
         ok_btn = button_box.button(QDialogButtonBox.Ok)
         ok_btn.setText("Применить")
         ok_btn.setProperty("role", "primary")
@@ -86,19 +91,13 @@ class TableEditorDialog(QDialog):
     def _create_columns_tab(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
-
         self.cols_table = QTableWidget()
         self.cols_table.setColumnCount(6)
         self.cols_table.setHorizontalHeaderLabels(["Имя", "Тип", "PK", "NN", "UQ", "По умолч."])
         self.cols_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-
-        # ВАЖНО: Увеличиваем высоту строк, чтобы ComboBox и CheckBox выглядели просторно
         self.cols_table.verticalHeader().setDefaultSectionSize(40)
-
         self.cols_table.setSelectionMode(QAbstractItemView.SingleSelection)
-        # Убираем рамку самой таблицы, чтобы сливалась с фоном
         self.cols_table.setStyleSheet("border: none;")
-
         layout.addWidget(self.cols_table)
 
         buttons_layout = QHBoxLayout()
@@ -108,16 +107,13 @@ class TableEditorDialog(QDialog):
         buttons_layout.addWidget(add_col_button)
         buttons_layout.addWidget(remove_col_button)
         layout.addLayout(buttons_layout)
-
         add_col_button.clicked.connect(self._add_column_row)
         remove_col_button.clicked.connect(self._remove_column_row)
-
         return widget
 
     def _create_indexes_tab(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
-
         self.indexes_table = QTableWidget()
         self.indexes_table.setColumnCount(3)
         self.indexes_table.setHorizontalHeaderLabels(["Имя", "Тип", "Колонки"])
@@ -127,9 +123,7 @@ class TableEditorDialog(QDialog):
         self.indexes_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.indexes_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.indexes_table.setStyleSheet("border: none;")
-
         layout.addWidget(self.indexes_table)
-
         buttons_layout = QHBoxLayout()
         add_idx_button = QPushButton("Добавить...")
         edit_idx_button = QPushButton("Редактировать...")
@@ -138,13 +132,10 @@ class TableEditorDialog(QDialog):
         buttons_layout.addWidget(add_idx_button)
         buttons_layout.addWidget(edit_idx_button)
         buttons_layout.addWidget(remove_idx_button)
-
         layout.addLayout(buttons_layout)
-
         add_idx_button.clicked.connect(self.handle_add_index)
         edit_idx_button.clicked.connect(self.handle_edit_index)
         remove_idx_button.clicked.connect(self.handle_delete_index)
-
         return widget
 
     def _create_notes_tab(self):
@@ -156,7 +147,6 @@ class TableEditorDialog(QDialog):
         return widget
 
     def _center_widget_in_cell(self, table, row, col, widget):
-        """Центрирует виджет (например, чекбокс) внутри ячейки таблицы."""
         cell_widget = QWidget()
         layout = QHBoxLayout(cell_widget)
         layout.addWidget(widget)
@@ -170,6 +160,10 @@ class TableEditorDialog(QDialog):
             QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить данные для таблицы ID={self.table_id}")
             self.reject()
             return
+
+        # Загружаем имя таблицы
+        self.table_name_input.setText(table_data.table_name)
+
         self._load_columns(list(table_data.columns))
         self._load_indexes(list(table_data.indexes))
         self.notes_text_edit.setText(table_data.notes or "")
@@ -180,44 +174,32 @@ class TableEditorDialog(QDialog):
         for row, col in enumerate(columns):
             self.cols_table.setVerticalHeaderItem(row, QTableWidgetItem(str(col.column_id)))
             self.cols_table.setItem(row, 0, QTableWidgetItem(col.column_name))
-
-            # ComboBox - добавляем напрямую, чтобы он растянулся
             combo = QComboBox()
             combo.addItems(self.DATA_TYPES)
             combo.setCurrentText(col.data_type)
             self.cols_table.setCellWidget(row, 1, combo)
-
-            # Checkboxes - центрируем через обертку
             pk_check = QCheckBox()
             pk_check.setChecked(col.is_primary_key)
             self._center_widget_in_cell(self.cols_table, row, 2, pk_check)
-
             nn_check = QCheckBox()
             nn_check.setChecked(not col.is_nullable)
             self._center_widget_in_cell(self.cols_table, row, 3, nn_check)
-
             uq_check = QCheckBox()
             uq_check.setChecked(col.is_unique)
             self._center_widget_in_cell(self.cols_table, row, 4, uq_check)
-
             self.cols_table.setItem(row, 5, QTableWidgetItem(col.default_value or ""))
 
     def _add_column_row(self):
         row = self.cols_table.rowCount()
         self.cols_table.insertRow(row)
-        self.cols_table.setVerticalHeaderItem(row, QTableWidgetItem(""))  # Новый ID пока неизвестен
+        self.cols_table.setVerticalHeaderItem(row, QTableWidgetItem(""))
         self.cols_table.setItem(row, 0, QTableWidgetItem("new_column"))
-
-        # ComboBox - добавляем напрямую
         combo = QComboBox()
         combo.addItems(self.DATA_TYPES)
         self.cols_table.setCellWidget(row, 1, combo)
-
-        # Checkboxes
         self._center_widget_in_cell(self.cols_table, row, 2, QCheckBox())
         self._center_widget_in_cell(self.cols_table, row, 3, QCheckBox())
         self._center_widget_in_cell(self.cols_table, row, 4, QCheckBox())
-
         self.cols_table.setItem(row, 5, QTableWidgetItem(""))
 
     def _remove_column_row(self):
@@ -228,28 +210,21 @@ class TableEditorDialog(QDialog):
     def _save_columns(self) -> bool:
         columns_data = []
         column_names = set()
-
         for row in range(self.cols_table.rowCount()):
             name_item = self.cols_table.item(row, 0)
             if not name_item or not name_item.text():
                 QMessageBox.warning(self, "Ошибка", f"Имя колонки в строке {row + 1} не может быть пустым.")
                 return False
-
             name = name_item.text().strip()
             if name in column_names:
-                QMessageBox.warning(self, "Ошибка",
-                                    f"Имя колонки '{name}' дублируется. Имена всех колонок должны быть уникальными.")
+                QMessageBox.warning(self, "Ошибка", f"Имя колонки '{name}' дублируется.")
                 return False
             column_names.add(name)
-
             header = self.cols_table.verticalHeaderItem(row)
-
-            # Получаем виджеты из ячеек
-            combo_widget = self.cols_table.cellWidget(row, 1)  # Это сам QComboBox
-            pk_widget_layout = self.cols_table.cellWidget(row, 2).layout()  # Это QWidget > Layout > Checkbox
+            combo_widget = self.cols_table.cellWidget(row, 1)
+            pk_widget_layout = self.cols_table.cellWidget(row, 2).layout()
             nn_widget_layout = self.cols_table.cellWidget(row, 3).layout()
             uq_widget_layout = self.cols_table.cellWidget(row, 4).layout()
-
             columns_data.append({
                 "id": int(header.text()) if header and header.text() else None,
                 "name": name,
@@ -259,12 +234,19 @@ class TableEditorDialog(QDialog):
                 "uq": uq_widget_layout.itemAt(0).widget().isChecked(),
                 "default": self.cols_table.item(row, 5).text()
             })
-
         self.controller.sync_columns_for_table(self.table_id, columns_data)
         return True
 
     def _save_notes(self):
         self.controller.update_table_notes(self.table_id, self.notes_text_edit.toPlainText())
+
+    def _save_name(self):
+        new_name = self.table_name_input.text().strip()
+        if not new_name:
+            QMessageBox.warning(self, "Ошибка", "Имя таблицы не может быть пустым.")
+            return False
+        self.controller.update_table_name(self.table_id, new_name)
+        return True
 
     def _load_indexes(self, indexes):
         self.indexes_table.clearContents()
@@ -273,10 +255,8 @@ class TableEditorDialog(QDialog):
             name_item = QTableWidgetItem(index.index_name)
             name_item.setData(Qt.UserRole, index)
             self.indexes_table.setItem(row, 0, name_item)
-
             index_type = "UNIQUE" if index.is_unique else "INDEX"
             self.indexes_table.setItem(row, 1, QTableWidgetItem(index_type))
-
             sorted_cols = sorted(index.index_columns, key=lambda ic: ic.order)
             col_names = ", ".join([ic.column.column_name for ic in sorted_cols])
             self.indexes_table.setItem(row, 2, QTableWidgetItem(col_names))
@@ -317,7 +297,7 @@ class TableEditorDialog(QDialog):
             self._load_all_data()
 
     def on_accept(self):
-        if not self._save_columns():
-            return
+        if not self._save_name(): return
+        if not self._save_columns(): return
         self._save_notes()
         self.accept()

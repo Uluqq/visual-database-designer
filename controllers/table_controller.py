@@ -2,6 +2,7 @@
 from models.base import SessionLocal
 from models.table import Table, TableColumn, DbIndex, IndexColumn
 from sqlalchemy.orm import joinedload, selectinload
+
 class TableController:
     def get_table_details(self, table_id: int) -> Table | None:
         session = SessionLocal()
@@ -12,6 +13,22 @@ class TableController:
             ).one_or_none()
         finally:
             session.close()
+
+    # --- VVV НОВЫЙ МЕТОД VVV ---
+    def update_table_name(self, table_id: int, new_name: str):
+        session = SessionLocal()
+        try:
+            table = session.query(Table).filter(Table.table_id == table_id).first()
+            if table:
+                table.table_name = new_name
+                session.commit()
+        except Exception as e:
+            session.rollback()
+            print(f"Ошибка при переименовании таблицы: {e}")
+        finally:
+            session.close()
+    # --- ^^^ ---------------- ^^^ ---
+
     def update_table_notes(self, table_id: int, notes: str):
         session = SessionLocal()
         try:
@@ -20,10 +37,12 @@ class TableController:
         except Exception as e:
             session.rollback(); print(f"Ошибка: {e}")
         finally: session.close()
+
     def get_columns_for_table(self, table_id: int) -> list[TableColumn]:
         session = SessionLocal()
         try: return session.query(TableColumn).filter_by(table_id=table_id).order_by(TableColumn.column_id).all()
         finally: session.close()
+
     def sync_columns_for_table(self, table_id: int, columns_data: list[dict]):
         session = SessionLocal()
         try:
@@ -44,6 +63,7 @@ class TableController:
         except Exception as e:
             session.rollback(); print(f"Ошибка: {e}")
         finally: session.close()
+
     def get_indexes_for_table(self, table_id: int) -> list[DbIndex]:
         session = SessionLocal()
         try:
@@ -51,6 +71,7 @@ class TableController:
                 selectinload(DbIndex.index_columns).joinedload(IndexColumn.column)
             ).order_by(DbIndex.index_name).all()
         finally: session.close()
+
     def create_or_update_index(self, table_id: int, index_id: int | None, data: dict):
         session = SessionLocal()
         try:
@@ -66,6 +87,7 @@ class TableController:
         except Exception as e:
             session.rollback(); print(f"Ошибка: {e}")
         finally: session.close()
+
     def delete_index(self, index_id: int):
         session = SessionLocal()
         try:
