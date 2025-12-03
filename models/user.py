@@ -30,9 +30,6 @@ class Connection(Base):
     port = Column(Integer, nullable=False)
     db_username = Column(String(100), nullable=False)
     db_password_hash = Column(String(255), nullable=True)
-
-    # --- ИЗМЕНЕНИЕ: Поле db_name УДАЛЕНО ---
-
     user_id = Column(Integer, ForeignKey('user.user_id'), nullable=False)
     user = relationship("User", back_populates="connections")
 

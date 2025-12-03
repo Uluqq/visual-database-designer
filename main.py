@@ -188,6 +188,7 @@ class ApplicationController:
 
 
 if __name__ == "__main__":
+    init_db()
     app = QApplication(sys.argv)
     app.setStyleSheet(CYBERPUNK_STYLESHEET)
 

@@ -3,13 +3,17 @@
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QVBoxLayout, QHBoxLayout, QWidget,
     QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView,
-    QPushButton, QComboBox, QCheckBox, QAbstractItemView, QMessageBox, QTextEdit, QFrame, QLabel, QLineEdit
+    QPushButton, QComboBox, QCheckBox, QAbstractItemView, QTextEdit, QFrame, QLabel, QLineEdit
 )
+# УБРАЛ QMessageBox из импорта
 from PySide6.QtCore import Qt
 from controllers.table_controller import TableController
 from .index_editor_dialog import IndexEditorDialog
 from models.table import DbIndex
 from .custom_title_bar import CustomTitleBar
+
+# --- ИМПОРТ НАШЕГО ДИЗАЙНЕРСКОГО ОКНА СООБЩЕНИЙ ---
+from views.styled_message_box import StyledMessageBox
 
 
 class TableEditorDialog(QDialog):
@@ -48,7 +52,7 @@ class TableEditorDialog(QDialog):
         content_layout.setContentsMargins(15, 15, 15, 15)
         content_layout.setSpacing(10)
 
-        # --- ПОЛЕ ИМЕНИ ТАБЛИЦЫ ---
+        # Поле имени таблицы
         name_layout = QHBoxLayout()
         name_label = QLabel("Название таблицы:")
         name_label.setStyleSheet("color: #bac2de; font-weight: bold;")
@@ -57,7 +61,6 @@ class TableEditorDialog(QDialog):
         name_layout.addWidget(name_label)
         name_layout.addWidget(self.table_name_input)
         content_layout.addLayout(name_layout)
-        # ---------------------------
 
         self.tab_widget = QTabWidget()
         content_layout.addWidget(self.tab_widget)
@@ -157,13 +160,12 @@ class TableEditorDialog(QDialog):
     def _load_all_data(self):
         table_data = self.controller.get_table_details(self.table_id)
         if not table_data:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить данные для таблицы ID={self.table_id}")
+            # ЗАМЕНА
+            StyledMessageBox.critical(self, "Ошибка", f"Не удалось загрузить данные для таблицы ID={self.table_id}")
             self.reject()
             return
 
-        # Загружаем имя таблицы
         self.table_name_input.setText(table_data.table_name)
-
         self._load_columns(list(table_data.columns))
         self._load_indexes(list(table_data.indexes))
         self.notes_text_edit.setText(table_data.notes or "")
@@ -213,11 +215,13 @@ class TableEditorDialog(QDialog):
         for row in range(self.cols_table.rowCount()):
             name_item = self.cols_table.item(row, 0)
             if not name_item or not name_item.text():
-                QMessageBox.warning(self, "Ошибка", f"Имя колонки в строке {row + 1} не может быть пустым.")
+                # ЗАМЕНА
+                StyledMessageBox.warning(self, "Ошибка", f"Имя колонки в строке {row + 1} не может быть пустым.")
                 return False
             name = name_item.text().strip()
             if name in column_names:
-                QMessageBox.warning(self, "Ошибка", f"Имя колонки '{name}' дублируется.")
+                # ЗАМЕНА (То, что было на скриншоте)
+                StyledMessageBox.warning(self, "Ошибка", f"Имя колонки '{name}' дублируется.")
                 return False
             column_names.add(name)
             header = self.cols_table.verticalHeaderItem(row)
@@ -243,7 +247,8 @@ class TableEditorDialog(QDialog):
     def _save_name(self):
         new_name = self.table_name_input.text().strip()
         if not new_name:
-            QMessageBox.warning(self, "Ошибка", "Имя таблицы не может быть пустым.")
+            # ЗАМЕНА
+            StyledMessageBox.warning(self, "Ошибка", "Имя таблицы не может быть пустым.")
             return False
         self.controller.update_table_name(self.table_id, new_name)
         return True
@@ -264,7 +269,8 @@ class TableEditorDialog(QDialog):
     def handle_add_index(self):
         all_columns = self.controller.get_columns_for_table(self.table_id)
         if not all_columns:
-            QMessageBox.warning(self, "Ошибка", "Нельзя создать индекс, пока в таблице нет колонок.")
+            # ЗАМЕНА
+            StyledMessageBox.warning(self, "Ошибка", "Нельзя создать индекс, пока в таблице нет колонок.")
             return
         dialog = IndexEditorDialog(all_columns, parent=self)
         if dialog.exec() == QDialog.Accepted:
@@ -274,7 +280,8 @@ class TableEditorDialog(QDialog):
     def handle_edit_index(self):
         current_row = self.indexes_table.currentRow()
         if current_row < 0:
-            QMessageBox.information(self, "Внимание", "Пожалуйста, выберите индекс для редактирования.")
+            # ЗАМЕНА
+            StyledMessageBox.information(self, "Внимание", "Пожалуйста, выберите индекс для редактирования.")
             return
         index_obj: DbIndex = self.indexes_table.item(current_row, 0).data(Qt.UserRole)
         all_columns = self.controller.get_columns_for_table(self.table_id)
@@ -286,13 +293,13 @@ class TableEditorDialog(QDialog):
     def handle_delete_index(self):
         current_row = self.indexes_table.currentRow()
         if current_row < 0:
-            QMessageBox.information(self, "Внимание", "Пожалуйста, выберите индекс для удаления.")
+            # ЗАМЕНА
+            StyledMessageBox.information(self, "Внимание", "Пожалуйста, выберите индекс для удаления.")
             return
         index_obj: DbIndex = self.indexes_table.item(current_row, 0).data(Qt.UserRole)
-        reply = QMessageBox.question(self, "Подтверждение",
-                                     f"Вы уверены, что хотите удалить индекс '{index_obj.index_name}'?",
-                                     QMessageBox.Yes | QMessageBox.No)
-        if reply == QMessageBox.Yes:
+        # ЗАМЕНА
+        if StyledMessageBox.question(self, "Подтверждение",
+                                     f"Вы уверены, что хотите удалить индекс '{index_obj.index_name}'?"):
             self.controller.delete_index(index_obj.index_id)
             self._load_all_data()
 
