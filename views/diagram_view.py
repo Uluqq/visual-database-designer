@@ -1,6 +1,8 @@
 # views/diagram_view.py
 
 import random
+from typing import Dict
+
 from PySide6.QtWidgets import (
     QGraphicsView, QGraphicsScene, QGraphicsRectItem,
     QGraphicsTextItem, QMenu, QGraphicsPathItem,
@@ -8,11 +10,13 @@ from PySide6.QtWidgets import (
     QMainWindow, QColorDialog, QGraphicsDropShadowEffect
 )
 from PySide6.QtCore import Qt, QRectF, QPointF, QSettings, Signal, QTimer
-from PySide6.QtGui import (QBrush, QColor, QPen, QPainter, QPainterPath,
-                           QFontMetrics, QImage, QLinearGradient, QFont)
+from PySide6.QtGui import (
+    QBrush, QColor, QPen, QPainter, QPainterPath,
+    QFontMetrics, QImage, QLinearGradient, QFont, QPixmap
+)
+
 from .table_editor_dialog import TableEditorDialog
 from controllers.table_controller import TableController
-from typing import Dict
 
 # --- ЦВЕТОВАЯ ПАЛИТРА (CYBERPUNK / SCI-FI) ---
 COLOR_BG_DARK = QColor(20, 20, 25)
@@ -22,6 +26,72 @@ COLOR_ACCENT_CYAN = QColor(137, 180, 250)
 COLOR_ACCENT_PINK = QColor(245, 194, 231)
 COLOR_TEXT_MAIN = QColor(255, 255, 255)
 COLOR_TEXT_DIM = QColor(180, 180, 200)
+
+
+# ==============================================================================
+# ЭФФЕКТ "BREACH PROTOCOL" (DECODE TEXT)
+# ==============================================================================
+class DecipherTextItem(QGraphicsTextItem):
+    """
+    Текстовый элемент, который 'расшифровывается' при появлении.
+    Стиль: Cyberpunk / Breach Protocol.
+    """
+
+    def __init__(self, text, parent=None):
+        super().__init__(text, parent)
+        self._target_text = text
+        self._current_step = 0
+        self._max_steps = 25
+
+        # Набор символов для "шума"
+        self._glitch_chars = "01XZ#@$%&*<>?[]_DATA_ERR"
+
+        self._timer = QTimer()
+        self._timer.timeout.connect(self._update_text_animation)
+
+        # Запускаем анимацию сразу при создании
+        self.animate_text(text)
+
+    def animate_text(self, new_text: str):
+        """Запускает процесс расшифровки для нового текста"""
+        self._target_text = new_text
+        self._current_step = 0
+        # Адаптивная длительность: чем длиннее слово, тем дольше расшифровка
+        self._max_steps = min(30, max(15, len(new_text) * 2))
+
+        if not self._timer.isActive():
+            self._timer.start(40)  # 40мс на кадр
+
+    def _update_text_animation(self):
+        self._current_step += 1
+        progress = self._current_step / self._max_steps
+
+        if progress >= 1.0:
+            super().setPlainText(self._target_text)
+            self._timer.stop()
+            return
+
+        # Сколько символов уже "расшифровано"
+        reveal_count = int(len(self._target_text) * progress)
+
+        clean_part = self._target_text[:reveal_count]
+
+        # Генерируем мусор для оставшейся части
+        remain_len = len(self._target_text) - reveal_count
+        dirty_part = ""
+        for _ in range(remain_len):
+            dirty_part += random.choice(self._glitch_chars)
+
+        super().setPlainText(clean_part + dirty_part)
+
+    def setPlainText(self, text):
+        # Перехватываем стандартный метод установки текста
+        self.animate_text(text)
+
+
+# ==============================================================================
+# КЛАССЫ ЭЛЕМЕНТОВ ДИАГРАММЫ
+# ==============================================================================
 
 class PortItem(QGraphicsEllipseItem):
     def __init__(self, parent_column, side='left'):
@@ -167,7 +237,8 @@ class TableItem(QGraphicsRectItem):
         self.glow.setOffset(0, 0)
         self.setGraphicsEffect(self.glow)
 
-        self.text = QGraphicsTextItem(name, self)
+        # === ИСПОЛЬЗУЕМ DECIPHER TEXT ДЛЯ ЗАГОЛОВКА ===
+        self.text = DecipherTextItem(name, self)
         self.text.setDefaultTextColor(QColor(10, 10, 20))
         font = QFont("Segoe UI", 10, QFont.Bold)
         font.setLetterSpacing(QFont.AbsoluteSpacing, 1)
@@ -176,31 +247,23 @@ class TableItem(QGraphicsRectItem):
 
     def paint(self, painter, option, widget=None):
         r = self.rect()
-        radius = 12  # Радиус скругления
+        radius = 12
 
-        # 1. Рисуем тело таблицы (Скругленное)
+        # 1. Тело
         body_path = QPainterPath()
         body_path.addRoundedRect(r, radius, radius)
         painter.setBrush(self.body_color)
         painter.setPen(Qt.NoPen)
         painter.drawPath(body_path)
 
-        # 2. Рисуем заголовок (Скругленный только сверху)
+        # 2. Заголовок
         header_height = 30
-
-        # Создаем сложный путь для заголовка: верх скруглен, низ прямой
         header_path = QPainterPath()
         header_path.moveTo(r.left(), r.top() + header_height)
         header_path.lineTo(r.left(), r.top() + radius)
-
-        # ИСПРАВЛЕНИЕ: Используем QPointF для обоих аргументов
         header_path.quadTo(r.topLeft(), QPointF(r.left() + radius, r.top()))
-
         header_path.lineTo(r.right() - radius, r.top())
-
-        # ИСПРАВЛЕНИЕ: Используем QPointF для обоих аргументов
         header_path.quadTo(r.topRight(), QPointF(r.right(), r.top() + radius))
-
         header_path.lineTo(r.right(), r.top() + header_height)
         header_path.closeSubpath()
 
@@ -212,7 +275,7 @@ class TableItem(QGraphicsRectItem):
         painter.setPen(Qt.NoPen)
         painter.drawPath(header_path)
 
-        # 3. Рисуем рамку поверх всего (Скругленную)
+        # 3. Рамка
         border_pen = QPen(self.custom_header_color, 1)
         if self.isSelected():
             border_pen = QPen(COLOR_ACCENT_PINK, 2)
@@ -239,6 +302,7 @@ class TableItem(QGraphicsRectItem):
             table_ctrl = TableController()
             fresh_table = table_ctrl.get_table_details(self.table_id)
             if fresh_table:
+                # Триггерим Breach Protocol анимацию при изменении имени
                 self.text.setPlainText(fresh_table.table_name)
             view = self.scene().views()[0]
             if hasattr(view, 'redraw_all_relationships'):
@@ -366,6 +430,10 @@ class ConnectionLine(QGraphicsPathItem):
         self.end_port.column.set_highlighted(highlighted)
 
 
+# ==============================================================================
+# ОСНОВНОЙ ВИД ДИАГРАММЫ С ГЛИТЧ-ЭФФЕКТОМ
+# ==============================================================================
+
 class DiagramView(QGraphicsView):
     project_structure_changed = Signal()
 
@@ -395,7 +463,7 @@ class DiagramView(QGraphicsView):
 
         # --- ЗВЕЗДЫ ---
         self.stars = []
-        for _ in range(500):
+        for _ in range(2000):
             self.stars.append([
                 random.randint(-6000, 6000),
                 random.randint(-6000, 6000),
@@ -403,6 +471,13 @@ class DiagramView(QGraphicsView):
                 random.randint(1, 3),
                 random.randint(50, 150)
             ])
+
+        # --- GLITCH EFFECT ---
+        self.is_glitching = False
+        self.glitch_timer = QTimer(self)
+        self.glitch_timer.timeout.connect(self._update_glitch_frame)
+        self.glitch_counter = 0
+        self.glitch_pixmap: QPixmap = None
 
     def animate_scene(self):
         self.grid_offset += QPointF(0.5, 0.5)
@@ -432,13 +507,45 @@ class DiagramView(QGraphicsView):
         QMessageBox.information(self, "Настройки",
                                 f"Цвет {color.name()} установлен как цвет по умолчанию для новых таблиц.")
 
+    # --- SAVE WITH FAST GLITCH ---
     def save_project_state(self):
         if not self.controller or not self.table_items: return
+
+        # 1. Сохранение позиций
         for table_item in self.table_items.values():
             pos = table_item.pos()
             self.controller.update_table_position(table_item.diagram_object_id, int(pos.x()), int(pos.y()))
-        if self.current_diagram: self.controller.update_project_timestamp(self.current_diagram.project_id)
-        if self.main_window: self.main_window.statusBar().showMessage("Проект успешно сохранен.", 3000)
+
+        # 2. Сохранение времени
+        if self.current_diagram:
+            self.controller.update_project_timestamp(self.current_diagram.project_id)
+
+        # 3. Сообщение
+        if self.main_window:
+            self.main_window.statusBar().showMessage("SYSTEM SAVED. DATA ENCRYPTED.", 3000)
+
+        # 4. Запуск визуального эффекта
+        self.trigger_glitch_effect()
+
+    def trigger_glitch_effect(self):
+        """Запускает быстрый эффект цифровых помех"""
+        self.glitch_pixmap = self.grab()  # Скриншот текущего вида
+        self.is_glitching = True
+        self.glitch_counter = 0
+        # Обновляем очень быстро (30мс) для резкости
+        self.glitch_timer.start(30)
+
+    def _update_glitch_frame(self):
+        """Тайк таймера глитча"""
+        self.glitch_counter += 1
+        self.viewport().update()  # Вызовет drawForeground
+
+        # 6 кадров * 30мс = 180мс длительности
+        if self.glitch_counter > 6:
+            self.is_glitching = False
+            self.glitch_timer.stop()
+            self.glitch_pixmap = None
+            self.viewport().update()
 
     def exit_to_project_selection(self):
         if self.main_window and hasattr(self.main_window, 'show_project_selection'):
@@ -675,10 +782,33 @@ class DiagramView(QGraphicsView):
     def delete_selected_tables(self):
         items = [it for it in self.scene.selectedItems() if isinstance(it, TableItem)]
         if not items: return
-        if QMessageBox.question(self, 'Подтверждение', f'Удалить {len(items)} таблицу(ы)?') == QMessageBox.Yes:
+
+        msg = f'Вы действительно хотите УДАЛИТЬ {len(items)} таблицу(ы) из проекта?\n\nОна пропадет из списка слева и из базы данных.'
+        if QMessageBox.question(self, 'Полное удаление', msg) == QMessageBox.Yes:
+
+            structure_changed = False
+
             for item in items:
-                self.controller.delete_table_from_diagram(item.diagram_object_id)
-            self.main_window.load_project_data()
+                # 1. Удаляем из БД через контроллер (используем table_id)
+                # Мы предполагаем, что контроллер уже обновлен и имеет метод delete_table_completely
+                if hasattr(self.controller, 'delete_table_completely'):
+                    success = self.controller.delete_table_completely(item.table_id)
+                else:
+                    # Fallback для старых версий контроллера
+                    self.controller.delete_table_from_diagram(item.diagram_object_id)
+                    success = True  # Но это не удалит из БД
+
+                if success:
+                    # 2. Удаляем визуально со сцены
+                    self.scene.removeItem(item)
+                    if item.table_id in self.table_items:
+                        del self.table_items[item.table_id]
+                    structure_changed = True
+
+            # 3. Обновляем интерфейс
+            if structure_changed:
+                self.project_structure_changed.emit()
+                self.redraw_all_relationships()
 
     def delete_selected_lines(self):
         items = [it for it in self.scene.selectedItems() if isinstance(it, ConnectionLine)]
@@ -730,6 +860,56 @@ class DiagramView(QGraphicsView):
 
         painter.drawLines(lines)
 
+    # === ОТРИСОВКА GLITCH ЭФФЕКТА ПОВЕРХ ВСЕГО ===
+    def drawForeground(self, painter, rect):
+        super().drawForeground(painter, rect)
+
+        if not self.is_glitching or not self.glitch_pixmap:
+            return
+
+        scene_rect = self.mapToScene(self.viewport().rect()).boundingRect()
+
+        painter.save()
+        painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
+
+        # 1. Тряска (Shake)
+        shake_x = random.randint(-10, 10)
+        shake_y = random.randint(-10, 10)
+        painter.drawPixmap(scene_rect.adjusted(shake_x, shake_y, shake_x, shake_y).toRect(), self.glitch_pixmap)
+
+        # 2. Слайсинг (Разрезание картинки)
+        num_slices = random.randint(3, 8)
+        w = self.glitch_pixmap.width()
+        h = self.glitch_pixmap.height()
+
+        for _ in range(num_slices):
+            y_pos = random.randint(0, h - 50)
+            height = random.randint(5, 50)
+            offset_x = random.randint(-50, 50)
+
+            target_y = scene_rect.top() + (y_pos / h) * scene_rect.height()
+            target_h = (height / h) * scene_rect.height()
+
+            target_rect = QRectF(scene_rect.left() + offset_x, target_y, scene_rect.width(), target_h)
+            source_rect = QRectF(0, y_pos, w, height)
+
+            painter.drawPixmap(target_rect, self.glitch_pixmap, source_rect)
+
+            # Цветной оверлей
+            color = random.choice([QColor(0, 255, 255, 100), QColor(255, 0, 255, 100)])
+            painter.fillRect(target_rect, color)
+
+        # 3. Артефакты (Инверсия)
+        painter.setCompositionMode(QPainter.CompositionMode_Difference)
+        for _ in range(5):
+            rx = random.uniform(scene_rect.left(), scene_rect.right())
+            ry = random.uniform(scene_rect.top(), scene_rect.bottom())
+            rw = random.uniform(20, 100)
+            rh = random.uniform(5, 20)
+            painter.fillRect(QRectF(rx, ry, rw, rh), QColor(255, 255, 255))
+
+        painter.restore()
+
     def wheelEvent(self, event):
         if event.modifiers() & Qt.ControlModifier:
             delta = event.angleDelta().y()
@@ -739,20 +919,20 @@ class DiagramView(QGraphicsView):
             super().wheelEvent(event)
 
 
-# --- МИНИКАРТА (С НАВИГАЦИЕЙ) ---
+# ==============================================================================
+# МИНИКАРТА
+# ==============================================================================
+
 class MinimapView(QGraphicsView):
     def __init__(self, scene, main_view, parent=None):
         super().__init__(scene, parent)
         self.main_view = main_view
 
-        # Включаем интерактивность, чтобы ловить клики
-        self.setInteractive(False)  # Оставляем False для сцены, но события мыши перехватываем сами
-
+        self.setInteractive(False)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setRenderHint(QPainter.Antialiasing)
 
-        # Стиль
         self.setStyleSheet("""
             QGraphicsView {
                 background-color: rgba(20, 20, 30, 0.8);
@@ -760,39 +940,26 @@ class MinimapView(QGraphicsView):
                 border-radius: 5px;
             }
         """)
-
-        # Масштаб
         self.scale(0.1, 0.1)
 
     def mousePressEvent(self, event):
-        """Перемещение камеры по клику (как в Dota/Warcraft)"""
         if event.button() == Qt.LeftButton:
             self._move_main_view_to_click(event.pos())
-        # Не вызываем super(), чтобы не выделять объекты на миникарте
 
     def mouseMoveEvent(self, event):
-        """Перемещение камеры при зажатой кнопке мыши"""
         if event.buttons() & Qt.LeftButton:
             self._move_main_view_to_click(event.pos())
 
     def _move_main_view_to_click(self, pos):
-        # 1. Переводим координаты клика на миникарте в координаты сцены
         scene_pos = self.mapToScene(pos)
-
-        # 2. Центрируем основное окно на этой точке
         self.main_view.centerOn(scene_pos)
-
-        # 3. Принудительно перерисовываем миникарту, чтобы рамка сдвинулась мгновенно
         self.viewport().update()
 
     def drawForeground(self, painter, rect):
         super().drawForeground(painter, rect)
-
-        # Рисуем рамку текущего обзора
-        # mapToScene преобразует прямоугольник окна (viewport) в координаты сцены
         visible_poly = self.main_view.mapToScene(self.main_view.viewport().rect())
         visible_rect = visible_poly.boundingRect()
 
-        painter.setPen(QPen(QColor(255, 0, 255), 20))  # Жирная розовая рамка
+        painter.setPen(QPen(QColor(255, 0, 255), 20))
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(visible_rect)

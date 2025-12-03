@@ -218,3 +218,65 @@ class DiagramController:
             return count > 0
         finally:
             session.close()
+
+    # controllers/diagram_controller.py
+
+    # 1. ПРОВЕРЬТЕ ИМПОРТЫ В НАЧАЛЕ ФАЙЛА
+    from models.base import SessionLocal
+    from models.diagram import DiagramObject
+    from models.table import Table
+    # !!! ВАЖНО: Добавьте RelationshipColumn в импорт !!!
+    from models.relationships import Relationship, RelationshipColumn
+
+    # ... код класса ...
+
+    def delete_table_completely(self, table_id: int) -> bool:
+        """
+        Полное удаление таблицы.
+        Порядок удаления (от зависимых к главным):
+        1. DiagramObject (визуальное представление)
+        2. RelationshipColumn (детали связей - какие колонки связаны)
+        3. Relationship (сами связи между таблицами)
+        4. Table (сама таблица)
+        """
+        session = SessionLocal()
+        try:
+            # 1. Удаляем визуальные объекты (DiagramObject)
+            session.query(DiagramObject).filter(DiagramObject.table_id == table_id).delete()
+
+            # 2. Находим ID всех связей, где участвует эта таблица
+            # (как родительская или как дочерняя)
+            rels_to_delete = session.query(Relationship).filter(
+                (Relationship.start_table_id == table_id) |
+                (Relationship.end_table_id == table_id)
+            ).all()
+
+            # Собираем список ID этих связей
+            rel_ids = [r.relationship_id for r in rels_to_delete]
+
+            if rel_ids:
+                # 3. Сначала удаляем детали связей (RelationshipColumn).
+                # Именно это вызывало вашу ошибку.
+                session.query(RelationshipColumn).filter(
+                    RelationshipColumn.relationship_id.in_(rel_ids)
+                ).delete(synchronize_session=False)
+
+                # 4. Теперь безопасно удаляем сами связи (Relationship)
+                session.query(Relationship).filter(
+                    Relationship.relationship_id.in_(rel_ids)
+                ).delete(synchronize_session=False)
+
+            # 5. И наконец, удаляем саму таблицу
+            table = session.get(Table, table_id)
+            if table:
+                session.delete(table)
+                session.commit()
+                return True
+            return False
+
+        except Exception as e:
+            session.rollback()
+            print(f"Критическая ошибка при удалении таблицы ID {table_id}: {e}")
+            return False
+        finally:
+            session.close()

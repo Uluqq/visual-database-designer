@@ -130,6 +130,7 @@ class MainWindow(QMainWindow):
         self.minimap = MinimapView(self.diagram_view.scene, self.diagram_view, view_container)
         self.minimap.setFixedSize(200, 150)
         self.minimap.show()
+        self.diagram_view.project_structure_changed.connect(self.update_project_tables_list)
 
     def _setup_menu_actions(self):
         file_menu = self.menu_bar.addMenu("Файл")
