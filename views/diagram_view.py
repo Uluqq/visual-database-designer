@@ -1,19 +1,20 @@
 # views/diagram_view.py
 
+import random
 from PySide6.QtWidgets import (
     QGraphicsView, QGraphicsScene, QGraphicsRectItem,
     QGraphicsTextItem, QMenu, QGraphicsPathItem,
     QGraphicsEllipseItem, QMessageBox, QInputDialog, QGraphicsItem, QDialog,
     QMainWindow, QColorDialog, QGraphicsDropShadowEffect
 )
-from PySide6.QtCore import Qt, QRectF, QPointF, QSettings, Signal, QTimer, QTimeLine
+from PySide6.QtCore import Qt, QRectF, QPointF, QSettings, Signal, QTimer
 from PySide6.QtGui import (QBrush, QColor, QPen, QPainter, QPainterPath,
                            QFontMetrics, QImage, QLinearGradient, QFont)
 from .table_editor_dialog import TableEditorDialog
 from controllers.table_controller import TableController
 from typing import Dict
 
-# --- ЦВЕТОВАЯ ПАЛИТРА (CYBERPUNK / NEON) ---
+# --- ЦВЕТОВАЯ ПАЛИТРА (CYBERPUNK / SCI-FI) ---
 COLOR_BG_DARK = QColor(20, 20, 25)
 COLOR_GRID_LINE = QColor(255, 255, 255, 15)
 COLOR_NODE_BODY = QColor(30, 32, 40, 210)
@@ -21,7 +22,6 @@ COLOR_ACCENT_CYAN = QColor(137, 180, 250)
 COLOR_ACCENT_PINK = QColor(245, 194, 231)
 COLOR_TEXT_MAIN = QColor(255, 255, 255)
 COLOR_TEXT_DIM = QColor(180, 180, 200)
-
 
 class PortItem(QGraphicsEllipseItem):
     def __init__(self, parent_column, side='left'):
@@ -41,7 +41,7 @@ class PortItem(QGraphicsEllipseItem):
 
         # Свечение порта
         glow = QGraphicsDropShadowEffect()
-        glow.setBlurRadius(15)
+        glow.setBlurRadius(10)
         glow.setColor(self.default_color)
         glow.setOffset(0, 0)
         self.setGraphicsEffect(glow)
@@ -100,7 +100,7 @@ class ColumnItem(QGraphicsRectItem):
         self.name_item = QGraphicsTextItem("", self)
         self.name_item.setDefaultTextColor(COLOR_TEXT_MAIN)
         self.name_item.setPos(10, 4)
-        self.name_item.setFont(QFont("Segoe UI", 9))
+        self.name_item.setFont(QFont("Consolas", 9))
 
         self.type_item = QGraphicsTextItem("", self)
         self.type_item.setDefaultTextColor(COLOR_TEXT_DIM)
@@ -112,8 +112,8 @@ class ColumnItem(QGraphicsRectItem):
         self._update_and_elide_text()
 
     def _update_and_elide_text(self):
-        pk_color = "#fab387"  # Orange
-        fk_color = "#a6e3a1"  # Green
+        pk_color = "#fab387"
+        fk_color = "#a6e3a1"
 
         name_html = ""
         if self.is_pk: name_html += f"<span style='color:{pk_color};'>🔑 </span>"
@@ -139,7 +139,7 @@ class ColumnItem(QGraphicsRectItem):
     def set_highlighted(self, highlighted: bool):
         self.is_highlighted = highlighted
         if highlighted:
-            self.setBrush(QBrush(QColor(0, 255, 255, 30)))  # Cyan selection
+            self.setBrush(QBrush(QColor(0, 243, 255, 30)))
         else:
             self.setBrush(Qt.NoBrush)
 
@@ -161,7 +161,6 @@ class TableItem(QGraphicsRectItem):
         self.custom_header_color = QColor(color) if color else COLOR_ACCENT_CYAN
         self.body_color = COLOR_NODE_BODY
 
-        # Свечение таблицы
         self.glow = QGraphicsDropShadowEffect()
         self.glow.setBlurRadius(20)
         self.glow.setColor(QColor(0, 0, 0, 100))
@@ -173,47 +172,58 @@ class TableItem(QGraphicsRectItem):
         font = QFont("Segoe UI", 10, QFont.Bold)
         font.setLetterSpacing(QFont.AbsoluteSpacing, 1)
         self.text.setFont(font)
-        self.text.setPos(8, 4)
+        self.text.setPos(10, 4)
 
     def paint(self, painter, option, widget=None):
         r = self.rect()
+        radius = 12  # Радиус скругления
 
-        # Тело
+        # 1. Рисуем тело таблицы (Скругленное)
         body_path = QPainterPath()
-        body_path.addRoundedRect(r, 10, 10)
+        body_path.addRoundedRect(r, radius, radius)
         painter.setBrush(self.body_color)
         painter.setPen(Qt.NoPen)
         painter.drawPath(body_path)
 
-        # Заголовок
+        # 2. Рисуем заголовок (Скругленный только сверху)
         header_height = 30
-        header_rect = QRectF(r.x(), r.y(), r.width(), header_height)
-        header_path = QPainterPath()
-        header_path.setFillRule(Qt.WindingFill)
-        header_path.addRoundedRect(header_rect, 10, 10)
-        header_path.addRect(QRectF(r.x(), r.y() + header_height - 5, r.width(), 5))
 
-        grad = QLinearGradient(header_rect.topLeft(), header_rect.bottomRight())
+        # Создаем сложный путь для заголовка: верх скруглен, низ прямой
+        header_path = QPainterPath()
+        header_path.moveTo(r.left(), r.top() + header_height)
+        header_path.lineTo(r.left(), r.top() + radius)
+
+        # ИСПРАВЛЕНИЕ: Используем QPointF для обоих аргументов
+        header_path.quadTo(r.topLeft(), QPointF(r.left() + radius, r.top()))
+
+        header_path.lineTo(r.right() - radius, r.top())
+
+        # ИСПРАВЛЕНИЕ: Используем QPointF для обоих аргументов
+        header_path.quadTo(r.topRight(), QPointF(r.right(), r.top() + radius))
+
+        header_path.lineTo(r.right(), r.top() + header_height)
+        header_path.closeSubpath()
+
+        grad = QLinearGradient(r.topLeft(), QPointF(r.right(), r.top() + header_height))
         grad.setColorAt(0, self.custom_header_color)
-        grad.setColorAt(1, self.custom_header_color.darker(120))
+        grad.setColorAt(1, self.custom_header_color.darker(130))
 
         painter.setBrush(grad)
         painter.setPen(Qt.NoPen)
         painter.drawPath(header_path)
-        painter.drawRoundedRect(header_rect, 10, 10)
-        painter.fillRect(QRectF(r.x(), r.y() + 15, r.width(), 15), grad)
 
-        # Рамка
-        border_pen = QPen(QColor(255, 255, 255, 30), 1)
+        # 3. Рисуем рамку поверх всего (Скругленную)
+        border_pen = QPen(self.custom_header_color, 1)
         if self.isSelected():
             border_pen = QPen(COLOR_ACCENT_PINK, 2)
-            self.glow.setColor(QColor(255, 0, 255, 150))  # Pink glow
+            self.glow.setColor(QColor(255, 0, 255, 150))
         else:
+            border_pen = QPen(QColor(255, 255, 255, 40), 1)
             self.glow.setColor(QColor(0, 0, 0, 100))
 
         painter.setBrush(Qt.NoBrush)
         painter.setPen(border_pen)
-        painter.drawRoundedRect(r, 10, 10)
+        painter.drawRoundedRect(r, radius, radius)
 
     def setColor(self, color: QColor):
         if color.isValid():
@@ -231,7 +241,8 @@ class TableItem(QGraphicsRectItem):
             if fresh_table:
                 self.text.setPlainText(fresh_table.table_name)
             view = self.scene().views()[0]
-            view.redraw_all_relationships()
+            if hasattr(view, 'redraw_all_relationships'):
+                view.redraw_all_relationships()
         event.accept()
 
     def add_column(self, name: str, column_id: int, column_info: dict = None):
@@ -288,13 +299,11 @@ class ConnectionLine(QGraphicsPathItem):
         super().__init__()
         self.start_port, self.end_port, self.relationship_id = start_port, end_port, relationship_id
 
-        # Анимация потока данных
         self.dash_offset = 0
 
-        # Настройка пера для пунктирной линии
         self.default_pen = QPen(QColor(100, 100, 120), 2)
         self.default_pen.setStyle(Qt.DashLine)
-        self.default_pen.setDashPattern([10, 10])  # Длина штриха, длина пробела
+        self.default_pen.setDashPattern([10, 10])
 
         self.highlight_pen = QPen(COLOR_ACCENT_CYAN, 3)
         self.highlight_pen.setStyle(Qt.DashLine)
@@ -316,22 +325,16 @@ class ConnectionLine(QGraphicsPathItem):
             port.connections.append(self)
         self.update_position()
 
-    # --- АНИМАЦИЯ ЛИНИИ ---
     def advance_phase(self):
-        # Двигаем пунктир
         self.dash_offset -= 1
-        # Если выделить линию - она бежит быстрее и ярче
         if self.isSelected():
             self.dash_offset -= 2
 
     def paint(self, painter, option, widget=None):
         painter.setRenderHint(QPainter.Antialiasing)
-
-        # Применяем смещение пунктира
         current_pen = self.pen()
         current_pen.setDashOffset(self.dash_offset)
         painter.setPen(current_pen)
-
         painter.drawPath(self.path())
 
     def update_position(self):
@@ -372,7 +375,7 @@ class DiagramView(QGraphicsView):
         self.setScene(self.scene)
         self.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
         self.setBackgroundBrush(QBrush(COLOR_BG_DARK))
-        self.setSceneRect(0, 0, 8000, 6000)
+        self.setSceneRect(-5000, -5000, 10000, 10000)
         self.setDragMode(QGraphicsView.RubberBandDrag)
         self.controller = None
         self.current_diagram = None
@@ -383,23 +386,38 @@ class DiagramView(QGraphicsView):
         self.first_port: PortItem = None
         self.default_table_color = self.load_default_color()
 
-        # --- АНИМАЦИЯ ---
+        # --- АНИМАЦИЯ И ЧАСТИЦЫ ---
         self.animation_timer = QTimer(self)
         self.animation_timer.timeout.connect(self.animate_scene)
-        self.animation_timer.start(50)  # 20 FPS (обновление каждые 50мс)
+        self.animation_timer.start(50)
 
-        self.grid_offset = QPointF(0, 0)  # Смещение сетки
+        self.grid_offset = QPointF(0, 0)
+
+        # --- ЗВЕЗДЫ ---
+        self.stars = []
+        for _ in range(500):
+            self.stars.append([
+                random.randint(-6000, 6000),
+                random.randint(-6000, 6000),
+                random.uniform(0.2, 1.5),
+                random.randint(1, 3),
+                random.randint(50, 150)
+            ])
 
     def animate_scene(self):
-        # 1. Двигаем сетку (эффект полета)
         self.grid_offset += QPointF(0.5, 0.5)
 
-        # 2. Двигаем линии связей (эффект передачи данных)
+        for star in self.stars:
+            star[0] += star[2]
+            star[1] += star[2]
+
+            if star[0] > 6000: star[0] = -6000
+            if star[1] > 6000: star[1] = -6000
+
         for item in self.scene.items():
             if isinstance(item, ConnectionLine):
                 item.advance_phase()
 
-        # Перерисовываем всю сцену (Viewport update)
         self.viewport().update()
 
     def load_default_color(self) -> QColor:
@@ -675,17 +693,21 @@ class DiagramView(QGraphicsView):
                     end_column.is_fk = is_still_fk
                     end_column._update_and_elide_text()
 
-    # --- РИСОВАНИЕ БЕГУЩЕЙ СЕТКИ ---
     def drawBackground(self, painter, rect):
         painter.fillRect(rect, COLOR_BG_DARK)
 
-        grid_size = 50
+        # Рисуем звезды
+        for x, y, speed, size, opacity in self.stars:
+            if rect.left() <= x <= rect.right() and rect.top() <= y <= rect.bottom():
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor(255, 255, 255, opacity))
+                painter.drawEllipse(QPointF(x, y), size, size)
 
-        # Сдвигаем начало сетки на self.grid_offset
+        # Рисуем сетку
+        grid_size = 50
         left = int(rect.left()) - (int(rect.left()) % grid_size)
         top = int(rect.top()) - (int(rect.top()) % grid_size)
 
-        # Вычисляем смещение анимации (от 0 до grid_size)
         offset_x = self.grid_offset.x() % grid_size
         offset_y = self.grid_offset.y() % grid_size
 
@@ -694,9 +716,7 @@ class DiagramView(QGraphicsView):
         painter.setPen(pen)
 
         lines = []
-
-        # Добавляем смещение к координатам
-        x = left + offset_x - grid_size  # -grid_size чтобы не было дырки при сдвиге
+        x = left + offset_x - grid_size
         while x < rect.right():
             lines.append(QPointF(x, rect.top()))
             lines.append(QPointF(x, rect.bottom()))
@@ -717,3 +737,62 @@ class DiagramView(QGraphicsView):
             self.scale(zoom, zoom)
         else:
             super().wheelEvent(event)
+
+
+# --- МИНИКАРТА (С НАВИГАЦИЕЙ) ---
+class MinimapView(QGraphicsView):
+    def __init__(self, scene, main_view, parent=None):
+        super().__init__(scene, parent)
+        self.main_view = main_view
+
+        # Включаем интерактивность, чтобы ловить клики
+        self.setInteractive(False)  # Оставляем False для сцены, но события мыши перехватываем сами
+
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setRenderHint(QPainter.Antialiasing)
+
+        # Стиль
+        self.setStyleSheet("""
+            QGraphicsView {
+                background-color: rgba(20, 20, 30, 0.8);
+                border: 1px solid #00f3ff;
+                border-radius: 5px;
+            }
+        """)
+
+        # Масштаб
+        self.scale(0.1, 0.1)
+
+    def mousePressEvent(self, event):
+        """Перемещение камеры по клику (как в Dota/Warcraft)"""
+        if event.button() == Qt.LeftButton:
+            self._move_main_view_to_click(event.pos())
+        # Не вызываем super(), чтобы не выделять объекты на миникарте
+
+    def mouseMoveEvent(self, event):
+        """Перемещение камеры при зажатой кнопке мыши"""
+        if event.buttons() & Qt.LeftButton:
+            self._move_main_view_to_click(event.pos())
+
+    def _move_main_view_to_click(self, pos):
+        # 1. Переводим координаты клика на миникарте в координаты сцены
+        scene_pos = self.mapToScene(pos)
+
+        # 2. Центрируем основное окно на этой точке
+        self.main_view.centerOn(scene_pos)
+
+        # 3. Принудительно перерисовываем миникарту, чтобы рамка сдвинулась мгновенно
+        self.viewport().update()
+
+    def drawForeground(self, painter, rect):
+        super().drawForeground(painter, rect)
+
+        # Рисуем рамку текущего обзора
+        # mapToScene преобразует прямоугольник окна (viewport) в координаты сцены
+        visible_poly = self.main_view.mapToScene(self.main_view.viewport().rect())
+        visible_rect = visible_poly.boundingRect()
+
+        painter.setPen(QPen(QColor(255, 0, 255), 20))  # Жирная розовая рамка
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRect(visible_rect)

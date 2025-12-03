@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt, Signal, QSize, QMimeData
 from PySide6.QtGui import QIcon, QAction, QDrag
 
 # ... остальные импорты ...
-from views.diagram_view import DiagramView
+from views.diagram_view import DiagramView, MinimapView
 from models.user import User
 from models.project import Project
 from controllers.diagram_controller import DiagramController
@@ -127,6 +127,9 @@ class MainWindow(QMainWindow):
         self.update_status_bar()
         self.showMaximized()
         self.load_project_data()
+        self.minimap = MinimapView(self.diagram_view.scene, self.diagram_view, view_container)
+        self.minimap.setFixedSize(200, 150)
+        self.minimap.show()
 
     def _setup_menu_actions(self):
         file_menu = self.menu_bar.addMenu("Файл")
@@ -203,10 +206,18 @@ class MainWindow(QMainWindow):
         view_container = self.diagram_view.parentWidget()
         if view_container:
             self.diagram_view.setGeometry(0, 0, view_container.width(), view_container.height())
+
+        # Кнопки
         button_width = 130
         margin_right = 20
         self.save_button.move(view_container.width() - button_width - margin_right, 20)
         self.exit_button.move(view_container.width() - button_width - margin_right, 70)
+
+        # МИНИКАРТА (Правый нижний угол)
+        if hasattr(self, 'minimap'):
+            m_w = self.minimap.width()
+            m_h = self.minimap.height()
+            self.minimap.move(view_container.width() - m_w - 20, view_container.height() - m_h - 20)
 
     def load_project_data(self):
         if not self.current_project: return
