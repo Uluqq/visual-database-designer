@@ -6,14 +6,14 @@ from PySide6.QtWidgets import (
     QGraphicsEllipseItem, QMessageBox, QInputDialog, QGraphicsItem, QDialog,
     QMainWindow, QColorDialog, QGraphicsDropShadowEffect
 )
-from PySide6.QtCore import Qt, QRectF, QPointF, QSettings, Signal
+from PySide6.QtCore import Qt, QRectF, QPointF, QSettings, Signal, QTimer, QTimeLine
 from PySide6.QtGui import (QBrush, QColor, QPen, QPainter, QPainterPath,
                            QFontMetrics, QImage, QLinearGradient, QFont)
 from .table_editor_dialog import TableEditorDialog
 from controllers.table_controller import TableController
 from typing import Dict
 
-# --- ЦВЕТОВАЯ ПАЛИТРА ---
+# --- ЦВЕТОВАЯ ПАЛИТРА (CYBERPUNK / NEON) ---
 COLOR_BG_DARK = QColor(20, 20, 25)
 COLOR_GRID_LINE = QColor(255, 255, 255, 15)
 COLOR_NODE_BODY = QColor(30, 32, 40, 210)
@@ -39,8 +39,9 @@ class PortItem(QGraphicsEllipseItem):
         self.setVisible(False)
         self.update_position()
 
+        # Свечение порта
         glow = QGraphicsDropShadowEffect()
-        glow.setBlurRadius(10)
+        glow.setBlurRadius(15)
         glow.setColor(self.default_color)
         glow.setOffset(0, 0)
         self.setGraphicsEffect(glow)
@@ -111,13 +112,12 @@ class ColumnItem(QGraphicsRectItem):
         self._update_and_elide_text()
 
     def _update_and_elide_text(self):
-        pk_color = "#fab387"
-        fk_color = "#a6e3a1"
+        pk_color = "#fab387"  # Orange
+        fk_color = "#a6e3a1"  # Green
 
         name_html = ""
         if self.is_pk: name_html += f"<span style='color:{pk_color};'>🔑 </span>"
         if self.is_fk: name_html += f"<span style='color:{fk_color};'>🔒 </span>"
-
         name_html += self.raw_name
 
         font_metrics_name = QFontMetrics(self.name_item.font())
@@ -139,7 +139,7 @@ class ColumnItem(QGraphicsRectItem):
     def set_highlighted(self, highlighted: bool):
         self.is_highlighted = highlighted
         if highlighted:
-            self.setBrush(QBrush(QColor(137, 180, 250, 50)))
+            self.setBrush(QBrush(QColor(0, 255, 255, 30)))  # Cyan selection
         else:
             self.setBrush(Qt.NoBrush)
 
@@ -161,9 +161,10 @@ class TableItem(QGraphicsRectItem):
         self.custom_header_color = QColor(color) if color else COLOR_ACCENT_CYAN
         self.body_color = COLOR_NODE_BODY
 
+        # Свечение таблицы
         self.glow = QGraphicsDropShadowEffect()
         self.glow.setBlurRadius(20)
-        self.glow.setColor(QColor(0, 0, 0, 0))
+        self.glow.setColor(QColor(0, 0, 0, 100))
         self.glow.setOffset(0, 0)
         self.setGraphicsEffect(self.glow)
 
@@ -177,12 +178,14 @@ class TableItem(QGraphicsRectItem):
     def paint(self, painter, option, widget=None):
         r = self.rect()
 
+        # Тело
         body_path = QPainterPath()
         body_path.addRoundedRect(r, 10, 10)
         painter.setBrush(self.body_color)
         painter.setPen(Qt.NoPen)
         painter.drawPath(body_path)
 
+        # Заголовок
         header_height = 30
         header_rect = QRectF(r.x(), r.y(), r.width(), header_height)
         header_path = QPainterPath()
@@ -200,10 +203,11 @@ class TableItem(QGraphicsRectItem):
         painter.drawRoundedRect(header_rect, 10, 10)
         painter.fillRect(QRectF(r.x(), r.y() + 15, r.width(), 15), grad)
 
+        # Рамка
         border_pen = QPen(QColor(255, 255, 255, 30), 1)
         if self.isSelected():
             border_pen = QPen(COLOR_ACCENT_PINK, 2)
-            self.glow.setColor(QColor(245, 194, 231, 150))
+            self.glow.setColor(QColor(255, 0, 255, 150))  # Pink glow
         else:
             self.glow.setColor(QColor(0, 0, 0, 100))
 
@@ -221,21 +225,13 @@ class TableItem(QGraphicsRectItem):
         super().mouseDoubleClickEvent(event)
         dialog = TableEditorDialog(self.table_id, self.scene().views()[0])
         if dialog.exec() == QDialog.Accepted:
-            # 1. Обновляем данные таблицы из БД (включая возможное новое имя)
             self.update_layout()
-
-            # 2. Обновляем заголовок таблицы (визуально)
             table_ctrl = TableController()
             fresh_table = table_ctrl.get_table_details(self.table_id)
             if fresh_table:
                 self.text.setPlainText(fresh_table.table_name)
-
-            # 3. ПЕРЕРИСОВЫВАЕМ ВСЕ СВЯЗИ
-            # Это необходимо, потому что при update_layout старые порты удаляются,
-            # и линии теряют привязку. Нужно создать линии заново.
             view = self.scene().views()[0]
             view.redraw_all_relationships()
-
         event.accept()
 
     def add_column(self, name: str, column_id: int, column_info: dict = None):
@@ -292,8 +288,17 @@ class ConnectionLine(QGraphicsPathItem):
         super().__init__()
         self.start_port, self.end_port, self.relationship_id = start_port, end_port, relationship_id
 
+        # Анимация потока данных
+        self.dash_offset = 0
+
+        # Настройка пера для пунктирной линии
         self.default_pen = QPen(QColor(100, 100, 120), 2)
+        self.default_pen.setStyle(Qt.DashLine)
+        self.default_pen.setDashPattern([10, 10])  # Длина штриха, длина пробела
+
         self.highlight_pen = QPen(COLOR_ACCENT_CYAN, 3)
+        self.highlight_pen.setStyle(Qt.DashLine)
+        self.highlight_pen.setDashPattern([10, 10])
 
         self.setPen(self.default_pen)
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
@@ -311,9 +316,22 @@ class ConnectionLine(QGraphicsPathItem):
             port.connections.append(self)
         self.update_position()
 
+    # --- АНИМАЦИЯ ЛИНИИ ---
+    def advance_phase(self):
+        # Двигаем пунктир
+        self.dash_offset -= 1
+        # Если выделить линию - она бежит быстрее и ярче
+        if self.isSelected():
+            self.dash_offset -= 2
+
     def paint(self, painter, option, widget=None):
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(self.pen())
+
+        # Применяем смещение пунктира
+        current_pen = self.pen()
+        current_pen.setDashOffset(self.dash_offset)
+        painter.setPen(current_pen)
+
         painter.drawPath(self.path())
 
     def update_position(self):
@@ -364,6 +382,25 @@ class DiagramView(QGraphicsView):
         self.column_map: Dict[int, ColumnItem] = {}
         self.first_port: PortItem = None
         self.default_table_color = self.load_default_color()
+
+        # --- АНИМАЦИЯ ---
+        self.animation_timer = QTimer(self)
+        self.animation_timer.timeout.connect(self.animate_scene)
+        self.animation_timer.start(50)  # 20 FPS (обновление каждые 50мс)
+
+        self.grid_offset = QPointF(0, 0)  # Смещение сетки
+
+    def animate_scene(self):
+        # 1. Двигаем сетку (эффект полета)
+        self.grid_offset += QPointF(0.5, 0.5)
+
+        # 2. Двигаем линии связей (эффект передачи данных)
+        for item in self.scene.items():
+            if isinstance(item, ConnectionLine):
+                item.advance_phase()
+
+        # Перерисовываем всю сцену (Viewport update)
+        self.viewport().update()
 
     def load_default_color(self) -> QColor:
         settings = QSettings("MyCompany", "VisualDBDesigner")
@@ -452,9 +489,8 @@ class DiagramView(QGraphicsView):
         else:
             event.ignore()
 
-    # --- ИСПРАВЛЕНО: Полная очистка сцены (удаляет фантомы) ---
     def clear_diagram(self):
-        self.scene.clear()  # Это самый надежный способ
+        self.scene.clear()
         self.table_items.clear()
         self.column_map.clear()
         self.first_port = None
@@ -488,7 +524,6 @@ class DiagramView(QGraphicsView):
 
         self.draw_relationships(relationships)
 
-    # Отдельный метод для рисования линий
     def draw_relationships(self, relationships):
         for rel in relationships:
             if not rel.relationship_columns: continue
@@ -502,17 +537,13 @@ class DiagramView(QGraphicsView):
                 end_col_item.is_fk = True
                 end_col_item._update_and_elide_text()
 
-    # --- НОВЫЙ МЕТОД: Принудительная перерисовка всех связей ---
     def redraw_all_relationships(self):
-        # 1. Удаляем существующие линии
         items_to_remove = [item for item in self.scene.items() if isinstance(item, ConnectionLine)]
         for item in items_to_remove:
             self.scene.removeItem(item)
 
-        # 2. Загружаем данные о связях заново из базы
         if self.controller and self.current_diagram:
             relationships = self.controller.get_relationships_for_project(self.current_diagram.project_id)
-            # 3. Рисуем
             self.draw_relationships(relationships)
 
     def update_connections_for_table(self, table_item: TableItem):
@@ -644,25 +675,34 @@ class DiagramView(QGraphicsView):
                     end_column.is_fk = is_still_fk
                     end_column._update_and_elide_text()
 
+    # --- РИСОВАНИЕ БЕГУЩЕЙ СЕТКИ ---
     def drawBackground(self, painter, rect):
         painter.fillRect(rect, COLOR_BG_DARK)
 
         grid_size = 50
+
+        # Сдвигаем начало сетки на self.grid_offset
         left = int(rect.left()) - (int(rect.left()) % grid_size)
         top = int(rect.top()) - (int(rect.top()) % grid_size)
+
+        # Вычисляем смещение анимации (от 0 до grid_size)
+        offset_x = self.grid_offset.x() % grid_size
+        offset_y = self.grid_offset.y() % grid_size
 
         pen = QPen(COLOR_GRID_LINE, 1)
         pen.setCosmetic(True)
         painter.setPen(pen)
 
         lines = []
-        x = left
+
+        # Добавляем смещение к координатам
+        x = left + offset_x - grid_size  # -grid_size чтобы не было дырки при сдвиге
         while x < rect.right():
             lines.append(QPointF(x, rect.top()))
             lines.append(QPointF(x, rect.bottom()))
             x += grid_size
 
-        y = top
+        y = top + offset_y - grid_size
         while y < rect.bottom():
             lines.append(QPointF(rect.left(), y))
             lines.append(QPointF(rect.right(), y))
@@ -673,11 +713,7 @@ class DiagramView(QGraphicsView):
     def wheelEvent(self, event):
         if event.modifiers() & Qt.ControlModifier:
             delta = event.angleDelta().y()
-            old_pos = self.mapToScene(event.position().toPoint())
             zoom = 1.15 if delta > 0 else 1 / 1.15
             self.scale(zoom, zoom)
-            new_pos = self.mapToScene(event.position().toPoint())
-            delta_scene = new_pos - old_pos
-            self.translate(delta_scene.x(), delta_scene.y())
         else:
             super().wheelEvent(event)
