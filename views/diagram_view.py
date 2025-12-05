@@ -457,7 +457,7 @@ class DiagramView(QGraphicsView):
         # --- АНИМАЦИЯ И ЧАСТИЦЫ ---
         self.animation_timer = QTimer(self)
         self.animation_timer.timeout.connect(self.animate_scene)
-        self.animation_timer.start(50)
+        self.animation_timer.start(10)
 
         self.grid_offset = QPointF(0, 0)
 
@@ -541,7 +541,7 @@ class DiagramView(QGraphicsView):
         self.viewport().update()  # Вызовет drawForeground
 
         # 6 кадров * 30мс = 180мс длительности
-        if self.glitch_counter > 6:
+        if self.glitch_counter > 3:
             self.is_glitching = False
             self.glitch_timer.stop()
             self.glitch_pixmap = None
